@@ -5,7 +5,7 @@ import { ErrorCode, NOT_LOGGED } from './codes.js';
 // Same body shape as v2: { statusCode, error, message, code, errorId }.
 // Routine answers the app handles by itself are not logged (NOT_LOGGED, docs/data/schema.pg.md `apperrors`).
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
-const SECRET_KEYS = new Set(['refreshToken', 'accessToken', 'refresh_token', 'access_token', 'password']);
+const SECRET_KEYS = new Set(['refreshToken', 'accessToken', 'refresh_token', 'access_token', 'password', 'idToken', 'authCode']);
 
 function redact(body: unknown): unknown {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null; // arrays are batches of user data: not logged

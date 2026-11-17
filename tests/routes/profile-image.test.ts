@@ -4,10 +4,10 @@ import { build, createAccount, type Account, type TestApp } from '../helpers/app
 import { bearer } from '../helpers/fixtures.js';
 
 // S3 is a fake here (an in-memory bucket, keyed by bucket and key). The signing is real and offline.
-const fake = vi.hoisted(() => ({ files: new Map<string, { size: number; contentType: string }>(), failDelete: false }));
+const fake = vi.hoisted(() => ({ files: new Map<string, { size: number; contentType: string }>(), failDelete: false, deleted: [] as string[] }));
 vi.mock('../../src/services/media/s3Ops.js', () => ({
   headObject: async (key: string, bucket = 'media') => fake.files.get(`${bucket}/${key}`) ?? null,
-  deleteObjects: async (keys: string[], bucket = 'media') => { if (fake.failDelete) throw new Error('S3 is down'); keys.forEach((k) => fake.files.delete(`${bucket}/${k}`)); },
+  deleteObjects: async (keys: string[], bucket = 'media') => { if (fake.failDelete) throw new Error('S3 is down'); fake.deleted.push(...keys); keys.forEach((k) => fake.files.delete(`${bucket}/${k}`)); },
   deleteFolder: async () => 0,
 }));
 
@@ -27,7 +27,7 @@ afterAll(async () => {
   await app.close();
 });
 beforeEach(async () => {
-  fake.files.clear(); fake.failDelete = false;
+  fake.files.clear(); fake.failDelete = false; fake.deleted = [];
   await app.pg.writer.query(`UPDATE userinfo SET profilepic = NULL, profilebg = NULL, hideprofile = false WHERE userid = ANY($1)`, [[me.userid, other.userid]]);
 });
 
@@ -184,4 +184,19 @@ test('reading: not with a watch token, and the name cannot leave the bucket', as
   const v = name(); upload(v); await commit({ kind: 'pic', value: v });
   expect((await call('GET', `/profilepic/${me.userid}/${v}`, me.watchToken)).statusCode).toBe(403);
   expect((await call('GET', `/profilepic/${me.userid}/..%2Fx`, other.phoneToken)).statusCode).toBe(400);
+});
+
+test('a picture that is a provider\'s https address (the old app) is replaced, and is never sent to S3 as a key to delete', async () => {
+  const link = 'https://lh3.googleusercontent.com/a/photo=s96-c';
+  await app.pg.writer.query('UPDATE userinfo SET profilepic = $2 WHERE userid = $1', [me.userid, link]);
+  const value = name();
+  upload(value);
+  expect((await commit({ kind: 'pic', value })).statusCode).toBe(200);
+  expect(await column('profilepic')).toBe(value);
+  expect(fake.deleted).toEqual([]);
+  // and resetting one that is still a link
+  await app.pg.writer.query('UPDATE userinfo SET profilepic = $2 WHERE userid = $1', [me.userid, link]);
+  expect((await call('DELETE', '/profile/image/pic')).statusCode).toBe(204);
+  expect(await column('profilepic')).toBeNull();
+  expect(fake.deleted).toEqual([]);
 });

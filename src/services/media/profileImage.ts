@@ -17,6 +17,12 @@ import type { Presigned } from './presign.js';
 // deleted after the row changes: a failed S3 delete leaves an orphan, never a broken profile). The column names come from PROFILE_COLUMN, a fixed table,
 // never from the request, so they are safe to put in the SQL.
 
+/**
+ * What the column holds is a file name in our bucket, EXCEPT for users of the old app, whose `profilepic` is the sign-in provider's `https` address. That is
+ * left as it is (the phone shows initials until a picture is chosen) and is never a key: it is not deleted from S3 (docs/data/production-checklist.md).
+ */
+export const isOurFile = (value: string | null | undefined): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(value);
+
 const HAS_PROFILE = 'SELECT 1 FROM userinfo WHERE userid = $1';
 
 async function requireProfile(app: FastifyInstance, userid: string): Promise<void> {
@@ -51,7 +57,7 @@ export async function commitProfileImage(app: FastifyInstance, userid: string, b
   }
   const r = await app.pg.writer.query(setSql(PROFILE_COLUMN[body.kind]), [userid, body.value]);
   const prev = r.rows[0]?.prev as string | null | undefined;
-  if (prev && prev !== body.value) {
+  if (isOurFile(prev) && prev !== body.value) {
     await deleteObjects([prev], 'profile').catch((e) => app.log.error({ err: e, userid }, 'old profile image not deleted from S3 (orphan)'));
   }
   return body.value;
@@ -62,7 +68,7 @@ export async function resetProfileImage(app: FastifyInstance, userid: string, ki
   await requireProfile(app, userid);
   const r = await app.pg.writer.query(setSql(PROFILE_COLUMN[kind]), [userid, null]);
   const prev = r.rows[0]?.prev as string | null | undefined;
-  if (prev) await deleteObjects([prev], 'profile').catch((e) => app.log.error({ err: e, userid }, 'old profile image not deleted from S3 (orphan)'));
+  if (isOurFile(prev)) await deleteObjects([prev], 'profile').catch((e) => app.log.error({ err: e, userid }, 'old profile image not deleted from S3 (orphan)'));
 }
 
 /**

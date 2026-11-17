@@ -152,19 +152,16 @@ The IP lookup (`X-Location: off`, the `ipref`) is not built yet.
 
 ## 8. Deleting an account
 
-`DELETE /account` (the user is from the token). The server:
-1. Sets `userinfo.deleted_date` to now. This is when the user deleted the account.
-2. Revokes every token of the user (`usertokens.revoked = true`, all devices). A watch's next refresh is refused.
-3. If there is an `apple_refresh_token`, revokes it with Apple (Sign in with Apple requires this on account deletion).
-4. Deletes the user's files in S3 (every `activitees/<activityid>/` of the user and the profile pictures in `fitpy`) and then the user's rows, in this order
-   ([schema.pg.md](schema.pg.md) section 9):
-   1. `DELETE FROM quotations WHERE userid = :userid` (its foreign key has no delete action and would block the next step);
-   2. `DELETE FROM userlogin WHERE userid = :userid`: this cascades to `activities`, `usertokens`, `user_topics` and the other tables that point at the login (`app_sync` too, until it is dropped);
-   3. `DELETE FROM downloads WHERE userid = :userid` (the rows that pointed at them are gone by now);
-   4. `DELETE FROM userinfo WHERE userid = :userid`.
+**Built** (`services/account/`, [api.md](api.md) section 8b). `POST /account/delete-code` and `/verify` keep a keyed hash of the e-mailed code in `account_deletion_codes` (`dev-db/07-account-deletion-v3.sql`), and `DELETE /account` (the user is from the token, and the code is checked again) does, in this order, so a failure leaves nothing that cannot be repeated:
+1. Sets `userinfo.deleted_date` to now and `hideprofile` to true: hidden from everyone at once. **The tokens still work**, so the same request can be repeated.
+2. Deletes the files in S3: the folder `<id>/` of **every activity and every post of the user** (not only those with a media list: a file uploaded and never committed is the user's too), sixteen at a time, and the picture and cover in `fitpy` (a value that is not a file name, the old app's `https` address, is skipped). **If S3 fails the request fails (502) and nothing else is deleted.**
+3. Revokes the Sign in with Apple grant of every device (`apple_refresh_token`, `revokeAppleToken`: Apple requires it on account deletion). A refusal is logged for a retry by hand and never stops the deletion.
+4. In **one transaction**: `DELETE FROM quotations` (where that old table exists; its foreign key has no delete action and would stop the next step), `DELETE FROM userlogin` (cascades to `activities`, `posts`, `usertokens`, `walkdata`, `streak_logs`, the deletion code and the other tables that point at the login: **every device is signed out**), `DELETE FROM downloads` (one install row at a time inside a savepoint: **`downloadid` is the install, not the user, so another account that used the same phone may still have activities pointing at it, and that row is left**), and `DELETE FROM userinfo` **unless the user has a row in `paymentstore`** (a subscription: the row is then kept for billing, with the pictures cleared and hidden). The server forgets the user's cached access tokens so every device is out at once.
 5. Answers 204.
 
-Open (README open item 10): whether step 4 happens at once or after a grace period, and what a sign-in during that period does.
+The e-mail goes out through `services/email/sendEmail.ts`: a message `{ fromName, from, to, subject, body }` to the SNS topic `SNS_ARN` (region `SNS_REGION`, us-east-1 by default), the same message the old API sends. Locally, with no topic and `DEV_LOGIN=true`, the code is written to the log.
+
+Open (README open item 10): a grace period before the rows go was not built: the deletion is at once.
 
 ## 9. Token clean-up
 
@@ -270,6 +267,10 @@ rewritten about once a day instead of on every sync.
 ## 13. Weather
 
 `POST /phone/v3/weather` ([api.md](api.md) section 13) calls WeatherAPI, and OpenWeather when that fails (`src/services/weather/getWeather.ts`, ported from the old API's `getWeather`). The WeatherAPI condition code gives the text and the icon (`src/services/weather/conditions.ts`; the icon gets `d` from 06:00 to 17:59 at the place, `n` otherwise), PM2.5 gives the 1..5 index (below 10, 25, 50, 75, then above). Nothing is stored. `WEATHER_API` and `OPEN_WEATHER_API` are read per call from the environment (`.env.local` locally, never committed, and not in `.env.test`); the tests stub `fetch`.
+
+## 15. Sign in with Apple and Google
+
+`services/auth/login.ts` (route `POST /phone/v3/auth/login`, [api.md](api.md) section 1b). `providers/verify.ts` checks the token with `jose` (`jwtVerify`) against the provider's key set (`providers/keys.ts`: `createRemoteJWKSet`, cached, refreshed when an unknown key id appears); `providers/apple.ts` makes the client secret (an ES256 JWT, five minutes, signed with the `.p8` Key: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY_PATH` or `APPLE_PRIVATE_KEY`), exchanges the authorization code and **revokes a refresh token** (`revokeAppleToken`, used by the account deletion, section 8: it never throws, a `false` must not stop the deletion; it is logged for a retry). Then the same `loginDevice` as every login. The tests use a local key set and a stubbed `fetch`; nothing leaves the machine.
 
 ## 14. Other people's profiles
 

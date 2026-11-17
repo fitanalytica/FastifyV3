@@ -75,6 +75,23 @@ Rules for this spec:
 - When the server really ends the sign-in, the app is told `expired` (not `user`): **nothing is wiped** (the feed cache, the posts, the activities stay), the app returns to the Welcome screen, which says so ("You were signed out. Sign in again and everything carries on: your posts and activities are kept."), and signing in again as the same person carries on. Only the user's own sign-out clears what is of other people (the feed cache), and a different account signing in clears the previous account's data.
 - The last 20 things that happened to the sign-in (refreshed, refused with which code, Keychain trouble; with the time, and never a secret) are kept (`readAuthLog()`), so a lost sign-in can be explained.
 
+## 1b. Sign in with Apple and Google
+
+`POST /auth/login` (open to anyone; limited to `LOGIN_RATE_LIMIT` tries a minute per address, 20 by default). The app shows Apple's or Google's own sheet and sends what it gives; **the server decides who the user is**, never the app.
+
+Body: `{ provider: "apple" | "google", idToken, nonce?, authCode?, fullName?, deviceid, downloadid?, device?, platform? }`.
+- `idToken` is checked against the provider's published keys (cached): the signature (RS256), the issuer, the audience (**our own app**: `APPLE_CLIENT_ID`, which is the bundle id `com.fitanalytica`; for Google `GOOGLE_CLIENT_IDS`, the app's OAuth client ids) and the expiry (30 seconds of clock tolerance). Anything wrong is **401 `LOGIN_REFUSED`**; a provider with no id set on the server is **503 `LOGIN_REFUSED`**.
+- `nonce` is the raw value the app made for this sign-in. **Apple:** the token holds what the app sent Apple, so it must match (as the raw value or its SHA-256), and a token without one is refused when the app sent one. **Google:** the iOS SDK puts a nonce of its own in the token that the app never sees, so with no `nonce` from the app there is nothing to compare and the token is accepted (its short life and audience still hold); when the app does send one, it must match.
+- The user is the token's `sub`, kept in `userlogin.applegoogleid` (50 characters at most). The first sign-in makes the `userlogin` row (`loginused`, `email`; an address longer than the column's 60 characters is left out, never cut); a repeat finds it, on any device. **No profile is made here**: whether the user is new is whether `GET /profile` is 404, as ever, and `PUT /profile` makes it ([section 7](#7-profile-and-location)).
+- Apple only: `authCode` is exchanged with Apple (`/auth/token`, with a client secret signed by the account's Key) for Apple's **refresh token**, kept in `usertokens.apple_refresh_token` for this device, so that **deleting the account can revoke the grant** (`/auth/revoke`). If the exchange fails the user is still signed in. `fullName` is what Apple gave **the first time only**; it is passed back as the app sent it.
+- `deviceid` is the install's device id (one `usertokens` row per device), `downloadid` its download row (made if missing).
+
+Answer: `{ accessToken, refreshToken, userid, downloadid, email, givenName, familyName }`. The tokens are the usual ones ([section 1](#1-tokens-and-devices)): **nothing ends the session except logout or a token the server refuses**. `givenName` and `familyName` start a new user's profile name (Google's token has them; Apple's come from `fullName`).
+
+`POST /auth/dev-login` (`DEV_LOGIN=true` only) stays for local test users.
+
+**Logging out** is `POST /auth/logout` with this device's refresh token ([section 1](#1-tokens-and-devices)); the phone needs the server for it (offline, the user stays signed in and is told to connect), except when the user removed the app from their Apple ID, which signs them out regardless ([phone.md](phone.md) section 9b).
+
 ## 2. Upload a batch
 
 `POST /activities/batch`, gzip-compressed.
@@ -199,7 +216,7 @@ The old `POST /media/:actid` (multipart, converts on the server) stays for older
 | Endpoint | Does |
 |---|---|
 | `GET /profile` | Returns `{ "profile": { … }, "account": { "email", "loginused" } }`: the user's `userinfo` row without `geom`, `store_id`, `mailids` and `deleted_date`, and the e-mail and login method from `userlogin`. `profile` has `fname`, `lname`, `about`, `gender`, `dobglobal`, `height`, `weight`, `hideprofile`, `timezone`, `iso`, `city`, `state`, `lat`, `lon`, `profilepic`, `profilebg`, `dateregistered`, `last_access_date`, `geo_source`, and **`country`**, the name of the country of `iso` from the server's list (`null` with no place, or a code that is not in the list). **404 `NOT_FOUND` when the user has no `userinfo` row yet: the app reads that as a new user** and goes to the setup steps. Phone only (the watch never reads the profile). Built in v3. |
-| `PUT /profile` | Sets the editable fields (`fname`, `lname`, `about`, `gender`, `dobglobal`, `height`, `weight`, `hideprofile`, `timezone`). The last write wins. |
+| `PUT /profile` | Body: any of `fname` (1 to 50 characters), `lname`, `about` (up to 500), `gender` (`male`, `female`, `other`), `dobglobal` (the birth date as midnight UTC, epoch seconds), `height` (cm, 30 to 300), `weight` (kg, 10 to 500); at least one. `null` clears a field (`lname`, `about`, `gender`, `dobglobal`, `height`, `weight`; not `fname`), an empty text clears too, and a text is trimmed. **The first call makes the profile** (`dateregistered` is then), so a new user's setup is this call; later calls change only the fields they carry (last write wins) and never the registration date or the visibility. Answers the fields as saved. An unknown field is ignored (visibility has [its own call](#7c-profile-visibility-public-or-private)); a value out of range is 400. Phone only. Built in v3. |
 | `PUT /profile/location` | `{ lat, lon, city, state?, iso }` from the phone's GPS. Exact coordinates (stored as doubles in `geom`; the `lat` and `lon` columns are REAL). Sets `geo_source = 2`. Answers `{ lat, lon, city, state, iso, country }` as saved. **The country's name is not sent and not stored: the server looks it up from `iso` in its own list** (250 entries, `services/location/countries.ts`). `iso` is checked against that list and stored upper case. `lat` in -90 to 90, `lon` in -180 to 180, `city` 1 to 100 characters (cut to 50 for the column), `state` optional (empty means none, `NULL`). **(0, 0) is refused**: it is what a failed fix looks like. Refused: 400 `BAD_REQUEST`. **404 `NOT_FOUND` while the user has no profile row yet** (the setup steps are not saved): the phone keeps the fix and sends it again after the profile. Phone only. Built in v3. |
 | `POST /profile/media/presign`, `POST /profile/media/commit` | The profile picture and the cover, same steps as section 6 (`role`: `profilepic` or `profilebg`, bucket `fitpy`). |
 
@@ -207,6 +224,14 @@ Two headers on requests, and one on responses, for the location ([server.md](ser
 - `X-Location: on | off` (request): whether location permission is granted.
 - `X-Ipref: <value>` (request): the last `ipref` the app received.
 - `ipref` (response): the value to send back next time.
+
+## 7c. Profile visibility (public or private)
+
+| Call | What it does |
+|---|---|
+| `PUT /profile/visibility` | Body `{ hidden: boolean }`; `true` is private (`userinfo.hideprofile`). Answers `{ hidden }` as saved. A repeat changes nothing. **404 `NOT_FOUND` while the user has no profile row yet**: the phone keeps the choice and sends it again after the profile. Phone only. |
+
+A private user's activities and posts are **not in the feed**, their feed activity is 404 for others ([section 11](#11-the-feed)), and so is their profile ([section 14](#14-other-peoples-profiles)); they always see their own. All of these read `hideprofile` on each request, so there is nothing to clean up when it changes, and a user who goes public again is back at once. Photos and videos already served to others are not recalled (a signed address lives a few minutes).
 
 ## 7b. Profile picture and cover
 
@@ -221,8 +246,19 @@ One file each, in the `fitpy` bucket under `<uuid>.<ext>`; the name is kept in `
 
 ## 8. Delete the account
 
-`DELETE /account` answers 204. It needs a connection and is never queued. What happens: [server.md](server.md) section 8,
-[phone.md](phone.md) section 10.
+Built in v3 as the three calls of [section 8b](#8b-deleting-the-account-with-an-e-mailed-code). It needs a connection and is never queued. What happens: [server.md](server.md) section 8, [phone.md](phone.md) section 10.
+
+## 8b. Deleting the account, with an e-mailed code
+
+| Call | What it does |
+|---|---|
+| `POST /account/delete-code` | E-mails a 6-digit code to the address the account has (`userlogin.email`, from the sign-in; **never one the app says**) through the SNS topic (`SNS_ARN`) that the old API's e-mail also uses. Answers `{ expiresIn: 600, resendIn: 30 }`. Only a keyed hash of the code is stored (`account_deletion_codes`, one row per user); it lives **10 minutes**, dies after **5 wrong tries**, and a new one may be asked for after **30 seconds** and at most **5 an hour** (429 otherwise). 400 for an account with no e-mail address, 503 `EMAIL_UNAVAILABLE` when e-mail is not set up or SNS does not take it. With `DEV_LOGIN=true` and no `SNS_ARN` the code is written to the server's log instead (local testing only). |
+| `POST /account/delete-code/verify` | Body `{ code }`. 204 when it is right (it stays valid for the deletion); 400 `DELETE_CODE_WRONG` when it is wrong, expired or used up (a wrong try is counted). The app checks the code as it is typed. |
+| `DELETE /account` | Body `{ code }`. Checks the code again, then deletes in this order: (1) the user is marked deleted and hidden; (2) **every file in S3**: the folder of every activity and every post (`<id>/`, with their photos, videos and posters) and the profile picture and cover (a picture that is an `https` address of the old app is not a file and is skipped); (3) **Apple** is told to revoke the Sign in with Apple grant of every device (a failure is logged and does not stop the deletion); (4) **the rows, in one transaction**: the login, which takes the activities, posts, tokens, steps and streak with it (every device is signed out at once), the install rows (an install's row is **shared by whoever signed in on that phone**, so one that another account's activities still point at is left: it holds a device and an app version, nothing about the user), and the profile row. 204. |
+
+**If S3 does not answer, the request fails (502 `DELETE_FAILED`) and nothing after that step is done**: the account still works, and the same request carries on (the code stays valid until its time is up). No file is ever left without an owner, and no row is deleted while its files are still there.
+
+**A user who has bought a subscription keeps their profile row** (`userinfo`: the billing needs it): it is marked deleted (`deleted_date`), hidden, and its picture and cover are cleared; everything else goes. The test is a row in the old app's `paymentstore` ([production-checklist.md](production-checklist.md)). A kept row is never shown to anyone (profile and feed are 404 for it), and signing in with the same Apple or Google account later makes a **new** account.
 
 ## 9. Errors and retries
 

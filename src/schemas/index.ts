@@ -5,3 +5,4 @@ export * from './profile.js';
 export * from './posts.js';
 export * from './weather.js';
 export * from './users.js';
+export * from './account.js';

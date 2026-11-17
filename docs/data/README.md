@@ -10,6 +10,7 @@ and location, and media. Feeds, challengers, subscription and other server-sent 
 | [format.md](format.md) | everyone | The activity record, the track arrays, the compact (wire) form, the new columns, media items |
 | [api.md](api.md) | server, phone, watch | Every endpoint: request, response, status codes, errors |
 | [server.md](server.md) | server | Postgres changes, the upsert, deleting, media in S3, location lookup, account deletion |
+| [production-checklist.md](production-checklist.md) | whoever deploys | **Everything to do before production**: schema scripts in order, scripts to run once, environment settings, code still to build. Keep it current. |
 | [phone.md](phone.md) | React Native app | Stores, the activities table, the sync loop, media preparation, profile and location, logout |
 | [watch.md](watch.md) | watch app | The watch's table, token from the phone, sending an activity, restore |
 | [performance.md](performance.md) | everyone | Where to make the tables and the sync processes more efficient and faster, with a read-only report ([perf-report.sql](perf-report.sql)) |

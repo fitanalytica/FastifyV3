@@ -1,5 +1,5 @@
 import type { Static } from '@sinclair/typebox';
-import type { UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
+import type { DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
 import type { AckBodySchema, ActivityIdParamsSchema, BatchBodySchema, DevLoginBodySchema, FeedQuerySchema, CommitBodySchema, InboxQuerySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, LogoutBodySchema, MediaParamsSchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema, WearableRestoreQuerySchema, LocationBodySchema } from '../schemas/index.js';
 
 // Request bodies, queries and params come from the schemas (src/schemas): one definition for the check and the type.
@@ -34,6 +34,13 @@ export interface DevLoginResponse {
   downloadid: string;
 }
 
+export interface LoginResponse extends DevLoginResponse {
+  email: string | null;
+  /** From the provider, to start the profile's name with (Apple: only on the first sign-in, as the app sent it). */
+  givenName: string | null;
+  familyName: string | null;
+}
+
 export interface LogoutResponse {
   revoked: number;
 }
@@ -55,3 +62,7 @@ export interface LocationResponse {
 export type WeatherBody = Static<typeof WeatherBodySchema>;
 export type UserIdParams = Static<typeof UserIdParamsSchema>;
 export type UserFeedQuery = Static<typeof UserFeedQuerySchema>;
+export type VisibilityBody = Static<typeof VisibilityBodySchema>;
+export type ProfileBody = Static<typeof ProfileBodySchema>;
+export type LoginBody = Static<typeof LoginBodySchema>;
+export type DeleteCodeBody = Static<typeof DeleteCodeBodySchema>;

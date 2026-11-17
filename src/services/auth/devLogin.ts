@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { errors } from '../../errors/AppError.js';
 import { ErrorCode } from '../../errors/codes.js';
 import type { DevLoginBody, DevLoginResponse } from '../../types/index.js';
+import { registerDownload } from './downloads.js';
 import { loginDevice } from './loginDevice.js';
 
 const DEV_APPLEGOOGLEID = 'dev-user';
@@ -28,20 +29,13 @@ async function devUserFor(app: FastifyInstance, body: Pick<DevLoginBody, 'provid
   return { userid: u.rows[0].userid, applegoogleid: DEV_APPLEGOOGLEID };
 }
 
-/** The `downloads.platform` of a device: a watch is watchos (Apple) or wearos (Android). */
-const platformFor = (android: boolean, watch: boolean) => (watch ? (android ? 'wearos' : 'watchos') : android ? 'android' : 'ios');
-
 /** LOCAL TESTING ONLY (DEV_LOGIN=true; otherwise it answers like an unknown route).
  *  Signs in a fixed dev user, with no Apple/Google check, through the same loginDevice as the real login. */
 export async function devLogin(app: FastifyInstance, b: DevLoginBody): Promise<DevLoginResponse> {
   if (!env().devLogin) throw errors.NotFound('Route not found', ErrorCode.NOT_FOUND);
   const downloadid = b.downloadid ?? randomUUID();
-  const w = app.pg.writer;
   const { userid, applegoogleid } = await devUserFor(app, b);
-  await w.query(
-    `INSERT INTO downloads (downloadid, userid, device_type, platform)
-     VALUES ($1, $2, $3, $4) ON CONFLICT (downloadid) DO UPDATE SET userid = EXCLUDED.userid`,
-    [downloadid, userid, b.watch ? 'watch' : 'phone', platformFor(b.platform === 'android', Boolean(b.watch))]);
+  await registerDownload(app, { downloadid, userid, platform: b.platform, watch: b.watch });
   const tokens = await loginDevice(app, { deviceid: b.deviceid, userid, downloadid, applegoogleid, device: b.device ?? 'dev' });
   return { ...tokens, userid, downloadid };
 }

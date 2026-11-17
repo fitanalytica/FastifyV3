@@ -17,6 +17,13 @@ export interface Env {
   s3: S3Env;
   /** The weather providers' keys (docs/data/api.md section 13). Without both the weather route answers 503. Never committed: they are set in the environment. */
   weather: { weatherApiKey?: string; openWeatherKey?: string };
+  /** Sign in with Apple and Google (docs/data/api.md section 1b). Without a client id for a provider, its login answers 503. The key is never committed. */
+  apple: { clientId: string; teamId?: string; keyId?: string; privateKeyPath?: string; privateKey?: string };
+  google: { clientIds: string[] };
+  /** E-mail goes out through an SNS topic that something else turns into mail (docs/data/api.md section 8b). Without `topicArn` no e-mail is sent. Credentials: the server's role, or AWS_* variables locally. */
+  sns: { topicArn?: string; region: string };
+  /** How many sign-ins one address may try in a minute (the sign-in route is open to anyone, so it is limited more than the rest). */
+  loginRateLimit: number;
 }
 
 /** Where the media lives (docs/data/server.md section 6). In production only the region is set: the credentials come from the server's role. */
@@ -45,6 +52,8 @@ function devUser(name: string): string | undefined {
   if (!UUID.test(v)) throw new Error(`${name} must be a userid (uuid), got "${v}"`);
   return v.toLowerCase();
 }
+
+const base64Key = (value: string | undefined) => (value ? Buffer.from(value, 'base64').toString('utf8') : undefined);
 
 const DEFAULT_REFRESH_GRACE = 30 * 24 * 3600;
 
@@ -82,5 +91,16 @@ export function env(): Env {
       bucketProfile: e.S3_BUCKET_PROFILE ?? 'fitpy',
     },
     weather: { weatherApiKey: e.WEATHER_API || undefined, openWeatherKey: e.OPEN_WEATHER_API || undefined },
+    apple: {
+      clientId: e.APPLE_CLIENT_ID || 'com.fitanalytica',
+      teamId: e.APPLE_TEAM_ID || undefined,
+      keyId: e.APPLE_KEY_ID || e.APPLE_SIGNIN_KEYID || undefined,
+      privateKeyPath: e.APPLE_PRIVATE_KEY_PATH || undefined,
+      // The Key as PEM text, or the same PEM as base64 (easier in an environment file than a text with line breaks).
+      privateKey: e.APPLE_PRIVATE_KEY || (base64Key(e.APPLE_SIGNIN_PRIVATE_KEY_BASE64 || e.APPLE_PRIVATE_KEY_BASE64)),
+    },
+    sns: { topicArn: e.SNS_ARN || undefined, region: e.SNS_REGION || 'us-east-1' },
+    loginRateLimit: Number(e.LOGIN_RATE_LIMIT) > 0 ? Number(e.LOGIN_RATE_LIMIT) : 20,
+    google: { clientIds: (e.GOOGLE_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
   };
 }

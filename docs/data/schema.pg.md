@@ -341,6 +341,21 @@ SELECT count(*) FROM activities WHERE activitydetail_v2 IS NULL AND (geom::geome
 
 Not a migration: a daily job that deletes old token rows ([server.md](server.md) section 9).
 
+## 8b. `account_deletion_codes` (new, v3)
+
+```sql
+CREATE TABLE account_deletion_codes (
+  userid UUID PRIMARY KEY REFERENCES userlogin(userid) ON DELETE CASCADE,
+  code_hash CHAR(64) NOT NULL,          -- HMAC-SHA256 of the user id and the code, keyed with the server's secret
+  expires_at INTEGER NOT NULL,          -- epoch seconds, 10 minutes after it was sent
+  attempts SMALLINT NOT NULL DEFAULT 0, -- wrong tries: dead after 5
+  sent_at INTEGER NOT NULL,             -- the last send, for the 30 second wait
+  sends SMALLINT NOT NULL DEFAULT 1,    -- sent in the current hour, at most 5
+  sends_from INTEGER NOT NULL
+);
+```
+One row per user, replaced by each new code, gone with the user. The script: `dev-db/07-account-deletion-v3.sql` (run on production too).
+
 ## 9. Other tables that point at `userlogin` and `downloads`
 
 From the `Referenced by` lists. I have not seen any of these tables.

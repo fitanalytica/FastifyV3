@@ -20,13 +20,18 @@ import { mediaRemoveV3 } from '../../controller/phone/v3/mediaremove.js';
 import { postDeleteV3 } from '../../controller/phone/v3/postdelete.js';
 import { postPutV3 } from '../../controller/phone/v3/postput.js';
 import { postsV3 } from '../../controller/phone/v3/posts.js';
+import { profilePutV3 } from '../../controller/phone/v3/profileput.js';
+import { profileVisibilityV3 } from '../../controller/phone/v3/profilevisibility.js';
 import { userFeedV3 } from '../../controller/phone/v3/userfeed.js';
 import { userProfileV3 } from '../../controller/phone/v3/userprofile.js';
 import { weatherV3 } from '../../controller/phone/v3/weather.js';
+import { accountDeleteV3 } from '../../controller/phone/v3/accountdelete.js';
+import { accountCodeV3, accountCodeVerifyV3 } from '../../controller/phone/v3/accountcode.js';
+import { loginV3 } from '../../controller/phone/v3/login.js';
 import { logoutV3 } from '../../controller/phone/v3/logout.js';
 import { profileV3 } from '../../controller/phone/v3/profile.js';
 import { profileLocationV3 } from '../../controller/phone/v3/profilelocation.js';
-import { UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
+import { DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
 import { AckBodySchema, ActivityIdParamsSchema, BatchBodySchema, CommitBodySchema, DevLoginBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, FeedQuerySchema, InboxQuerySchema, LocationBodySchema, MediaParamsSchema, LogoutBodySchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema } from '../../schemas/index.js';
 
 async function phoneRouterV3(fastify: FastifyInstance) {
@@ -36,13 +41,19 @@ async function phoneRouterV3(fastify: FastifyInstance) {
   // UNSECURED ROUTES
 
   fastify.post('/auth/refresh', { schema: { body: RefreshBodySchema } }, refreshTokenV3);
+  fastify.post('/auth/login', { schema: { body: LoginBodySchema } }, loginV3);
   fastify.post('/auth/dev-login', { schema: { body: DevLoginBodySchema } }, devLoginV3); // local testing only: 404 unless DEV_LOGIN=true
 
   // SECURED ROUTES
 
   fastify.get('/me', isAuth, meV3);
   fastify.get('/profile', isAuth, profileV3);
+  fastify.put('/profile', { ...isAuth, schema: { body: ProfileBodySchema } }, profilePutV3);
   fastify.put('/profile/location', { ...isAuth, schema: { body: LocationBodySchema } }, profileLocationV3);
+  fastify.put('/profile/visibility', { ...isAuth, schema: { body: VisibilityBodySchema } }, profileVisibilityV3);
+  fastify.post('/account/delete-code', isAuth, accountCodeV3);
+  fastify.post('/account/delete-code/verify', { ...isAuth, schema: { body: DeleteCodeBodySchema } }, accountCodeVerifyV3);
+  fastify.delete('/account', { ...isAuth, schema: { body: DeleteCodeBodySchema } }, accountDeleteV3);
   fastify.post('/auth/logout', { ...isAuth, schema: { body: LogoutBodySchema } }, logoutV3);
 
   fastify.post('/activities/batch', { ...isAuthBigBody, schema: { body: BatchBodySchema } }, activitiesBatchV3);

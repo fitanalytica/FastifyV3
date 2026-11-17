@@ -75,11 +75,15 @@ What differs in old rows is `activitydetail`, `activitybpm` and `media`; a row i
 | `activities_user_start (userid, startdate DESC, activityid DESC) WHERE tosend > 0` | restore pages | NEW |
 | `activities_user_watch_start (userid, startdate DESC) WHERE iswatch AND tosend > 0` | the watch's 50 | NEW |
 | `activities_inbox (userid) WHERE tosend = 2` | the phone's inbox (stays tiny) | NEW |
+| `activities_feed (enddate DESC, activityid DESC) WHERE tosend IN (1, 2)` | the feed: newest first, deleted rows not in it | NEW |
 
 ```sql
 CREATE INDEX activities_user_start       ON activities (userid, startdate DESC, activityid DESC) WHERE tosend > 0;
 CREATE INDEX activities_user_watch_start ON activities (userid, startdate DESC) WHERE iswatch AND tosend > 0;
 CREATE INDEX activities_inbox            ON activities (userid) WHERE tosend = 2;
+CREATE INDEX activities_feed             ON activities (enddate DESC, activityid DESC) WHERE tosend IN (1, 2);
+
+ALTER TABLE activities ADD COLUMN route_preview jsonb;   -- the feed's small route, format.md section 6
 ```
 
 `activities_user_start` serves the same lookups as `idx_activities_userid` plus the order; once the new one is in use, check whether the old one can go.
@@ -201,7 +205,7 @@ CREATE TABLE usertokens (
     changed_date BIGINT DEFAULT (EXTRACT(EPOCH FROM now())::bigint),
     accessed_date BIGINT,
     apple_refresh_token VARCHAR(255),            -- needed to revoke Sign in with Apple on account deletion
-    prev_refresh_token CHAR(64),                 -- NEW: the refresh value before the last rotation, accepted for 2 minutes
+    prev_refresh_token CHAR(64),                 -- NEW: the refresh value before the last rotation, accepted for 30 days (sliding)
     prev_changed_date BIGINT,                    -- NEW: when that rotation happened
     CONSTRAINT usertokens_access_token_key UNIQUE (access_token),
     CONSTRAINT usertokens_refresh_token_key UNIQUE (refresh_token)
@@ -225,7 +229,7 @@ Removed: the constraint `unique_applegoogle_device (applegoogleid, device)` and 
 **Tokens**
 - `access_token` and `refresh_token` hold a SHA-256 hash (64 hex characters, which is why the columns are `CHAR(64)`). Older rows still hold the raw value, and the lookup accepts both. The bearer token the app sends is a
   JWT whose payload carries the raw `access_token` ([api.md](api.md) section 1). The device kind (phone or watch) comes from the `downloads` row (`downloads.device_type`), because `usertokens.device` is a hardware model.
-- **A refresh keeps the previous value for 2 minutes** (`prev_refresh_token`), so a lost reply does not sign the user out ([server.md](server.md) section 10).
+- **A refresh keeps the previous value for 30 days (sliding)** (`prev_refresh_token`), so a lost reply does not sign the user out ([server.md](server.md) section 10).
 - **Old rows.** An upgrade to a new phone leaves the old phone's row, with live tokens, until the clean-up deletes it: rows not used for **365 days** ([server.md](server.md) section 9).
 - Migrate the old raw rows to hashes when it suits you, and then the lookup can drop the raw comparison.
 
@@ -443,3 +447,26 @@ CREATE TABLE sync_body (
 
 What it holds: the whole payload of the last sync, per user (overwritten each time). The same data is also split into the other tables, so it is stored twice.
 
+## 11. `posts` (what a user shares from Home)
+
+```sql
+CREATE TABLE posts (
+  postid    UUID PRIMARY KEY,                       -- made on the phone, so a repeated upload changes nothing
+  userid    UUID NOT NULL REFERENCES userlogin(userid) ON DELETE CASCADE,
+  posted_at INTEGER NOT NULL,                       -- epoch seconds, a real instant: the feed's order
+  tosend    SMALLINT NOT NULL DEFAULT 1,            -- 1 = live, 0 = deleted (a marker, like activities)
+  content   JSONB NOT NULL DEFAULT '{}'::jsonb,     -- { v, template?, steps?, distance?, dtgraph?, title?, description? } (format.md section 7)
+  media_v2  JSONB NOT NULL DEFAULT '[]'::jsonb,     -- the photos and videos, the same items as an activity's (format.md section 4)
+  ddate     INTEGER NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())),
+  CONSTRAINT posts_tosend CHECK (tosend IN (0, 1)),
+  CONSTRAINT posts_media_is_list CHECK (jsonb_typeof(media_v2) = 'array')
+);
+CREATE INDEX posts_feed ON posts (posted_at DESC, postid DESC) WHERE tosend = 1;          -- the feed
+CREATE INDEX posts_user ON posts (userid, posted_at DESC, postid DESC) WHERE tosend = 1;  -- the user's own list
+```
+
+Real columns for what is filtered, ordered and keyed (`postid`, `userid`, `posted_at`, `tosend`); one JSON for everything the author says, so a field is added or removed without a migration; and `media_v2` apart, because the upload loop appends to it while the author may be editing the words. File: `dev-db/06-posts-v3.sql` (for production, make the indexes `CONCURRENTLY`, outside a transaction).
+
+**Not a CHECK on "has something to show".** The rule (media coming, a title or a description) is the API's (`BAD_POST`): a post with no words is made first and its files are committed after, so the database cannot tell a post that is about to get files from an empty one. The feed hides a post with no media and no words, so it appears when its first file is committed.
+
+**Deleting a user** deletes their posts (`ON DELETE CASCADE`); the S3 folders `<postid>/` of those posts need the same clean-up as an activity's (TODO with the account deletion, section 8 of api.md).

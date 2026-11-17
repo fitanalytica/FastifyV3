@@ -57,7 +57,7 @@ Rules for this spec:
 - Logout needs the server: with no connection (or a 5xx) the app stays signed in. It then deletes no local data ([phone.md](phone.md) section 10); the next login uploads whatever is unsynced.
 - The watch's login (`POST /auth/watch-token`) runs the same function with the **watch's own** `device` value and `downloadid`, so it gets its own row.
 - **A refresh whose reply is lost** would sign the user out: the server has already replaced the refresh value, so the retry with the old one finds no row and answers `LOGOUT`. On mobile networks this will happen.
-  A refresh happens about once a week per device, so this is rare, but it means signing in again. **Decided:** the server also accepts the previous refresh value for 2 minutes ([server.md](server.md) section 10).
+  A refresh happens about once a week per device, so this is rare, but it means signing in again. **Decided:** the server also accepts the previous refresh value for 30 days (a sliding window) ([server.md](server.md) section 10).
 - The login sends `deviceid` (`DeviceInfo.getUniqueId()`), and the upsert updates `downloadid`, `userid` and the rest on a repeat login ([schema.pg.md](schema.pg.md) section 6).
 
 - **The `downloads` table is the device list.** Each install (phone or watch) has its own `downloads` row
@@ -66,6 +66,14 @@ Rules for this spec:
   and returns the watch's own refresh and access tokens. How they reach the watch: [watch.md](watch.md) section 2.
 - **Never copy the phone's refresh token to the watch.** With rotation, two devices using one token log each other out.
 - `DELETE /devices/{downloadid}` (unpair) revokes that device's refresh token and clears `is_watch_paired` on the phone's row.
+
+**What the phone does so a sign-in is never lost** (`src/data/api/session.ts`; the rule: **a sign-in is never thrown away on doubt**):
+- A Keychain read that returns nothing is repeated (after 150 and 600 ms) before it is believed; one that throws is not "empty": nobody is signed out, no request is made, and the stored value stays.
+- A refresh that is **refused** is checked against what is stored now: if another refresh has replaced the value it sent (a second run of the app, an overlapping reload), the newer one is used. Only a refusal of the very value that is stored is the server's real answer.
+- A network error, a 5xx, an unreadable Keychain or a failed write never sign out. A write of the new refresh value that fails is retried, and if it still fails the old value is kept (the server still accepts it: [server.md](server.md) section 10).
+- A request answered `LOGOUT` first tries the refresh value; only if the server refuses that too is the sign-in over.
+- When the server really ends the sign-in, the app is told `expired` (not `user`): **nothing is wiped** (the feed cache, the posts, the activities stay), the app returns to the Welcome screen, which says so ("You were signed out. Sign in again and everything carries on: your posts and activities are kept."), and signing in again as the same person carries on. Only the user's own sign-out clears what is of other people (the feed cache), and a different account signing in clears the previous account's data.
+- The last 20 things that happened to the sign-in (refreshed, refused with which code, Keychain trouble; with the time, and never a secret) are kept (`readAuthLog()`), so a lost sign-in can be explained.
 
 ## 2. Upload a batch
 
@@ -156,22 +164,35 @@ What the server removes: [server.md](server.md) section 4. What the client does 
 
 ## 6. Media (a pre-signed upload)
 
-File bytes never go through the API. For each file:
+File bytes never go through the API. For each file (**built, v3**):
 
-1. `POST /media/:actid/presign` with `{ "role": "photo" | "video" | "poster", "contentType": "image/webp", "bytes": 312345 }`.
-   The server checks that the activity is the user's and not deleted (`tosend > 0`), checks `bytes` against the cap for the role,
-   chooses the name (`<uuid>.<ext>` from the content type), and answers
-   `{ "value": "6f1c…2e.webp", "url": "<pre-signed PUT address>", "headers": { … } }`. The address is valid for about 15 minutes and is
-   signed for this exact key, content type and length.
+1. `POST /media/:activityid/presign` with `{ "role": "photo" | "video" | "poster", "contentType": "image/webp", "bytes": 312345 }`.
+   The server checks that the activity is the user's and not deleted (`tosend > 0`; else 404), that the content type suits the role (a photo or poster is `image/webp` or `image/jpeg`, a video `video/mp4`; else 400 `BAD_MEDIA`) and that `bytes` is within the hard cap (photo 5 MB, video 40 MB, poster 2 MB; the phone prepares to much smaller targets, section "Preparing media" of [phone.md](phone.md)).
+   It chooses the name (`<uuid>.<ext>`) and answers `{ "value": "6f1c…2e.webp", "url": "<pre-signed PUT address>", "headers": { "Content-Type": "image/webp" } }`. The address is valid for 15 minutes and is signed for this exact key, **content type and length**: a PUT with another type or size is refused by S3 (`SignatureDoesNotMatch`). The phone sends the `headers` as given; the length is the file's own.
 2. The app uploads the file with `PUT url`.
-3. `POST /media/:actid/commit` with `{ "value": "…", "type": "photo", "dimension": [w, h], "duration": 12.4, "poster": "<poster value>" }`.
-   The server checks the owner and `tosend > 0`, checks the file exists with the right size and type, and appends the item to `media_v2`
-   ([server.md](server.md) section 6). If no row was updated it deletes the file and answers 404. It never converts or reads the picture.
+3. `POST /media/:activityid/commit` with `{ "value": "…", "type": "photo" | "video", "dimension": [w, h], "duration": 12.4, "poster": "<poster value>", "blur": "<96 hex digits>" }`. `blur` is optional (photos and posters): a 4 x 4 grid of colours, 6 hex digits each, made on the phone ([phone.md](phone.md) section 8c); the server only checks its shape (`^[0-9a-f]{96}$`) and stores it in the item, so a card can paint a soft stand-in while the picture loads.
+   The server checks the owner and `tosend > 0` (404), that the file (and the poster) exists, is within the cap and has the right content type (a `HEAD`; else 400 `BAD_MEDIA` and **the uploaded files are deleted**), that a video has its poster and a photo has none (400), and appends the item to `media_v2` in one statement. It answers `{ "media_v2": [ … ] }`, **the activity's whole list after the change**, which the phone takes as the truth.
+   An activity may have **20** photos and videos: the 21st is **409 `MEDIA_LIMIT`** and its files are deleted. A **repeat of the same commit** (the answer was lost) changes nothing and answers the same list.
+   It never converts or reads the picture.
 
-A **video's poster** is uploaded first (steps 1 and 2 with role `poster`) and is **not committed on its own**: the video's commit carries its `poster`
-value. The activity must already be on the server. Media is uploaded one file at a time, in order, so the list keeps its order.
+A **video's poster** is uploaded first (steps 1 and 2 with role `poster`) and is **not committed on its own**: the video's commit carries its `poster` value. The activity must already be on the server. Media is uploaded one file at a time, in order, so the list keeps its order. A file uploaded but never committed (the phone was killed between the two) is an orphan: it is removed by the next removal of that value, or when the activity is deleted.
+
+### Removing a file
+
+`DELETE /media/:activityid/:value` (phone): takes the item out of `media_v2` (and the name out of an old row's `media` list) in one statement, then deletes the file and, for a video, its poster from S3. **204**; the activity must be the user's (404). **Idempotent**: a value that is not in the list is still 204, and its file is still deleted (it may be an upload that was never committed). The files go after the row is changed: a failed S3 delete leaves an orphan (logged), never a broken activity.
+
+**Deleting an activity** deletes every file under `activitees/<activityid>/` ([server.md](server.md) section 4); a failed S3 delete never fails the delete, and a repeat delete tries again.
 
 The old `POST /media/:actid` (multipart, converts on the server) stays for older app versions and is not used by the new format.
+
+### Reading a file
+
+`GET /media/:activityid/:value` (phone) answers **302** to a pre-signed S3 address of `<activityid>/<value>` in the `activitees` bucket, valid for 15 minutes. The bytes never go through the API and the bucket stays private. `value` is a file name as in `media_v2` (`<uuid>.webp`) or an old row's `media` list, with no slash (400 otherwise).
+
+- **Who:** the owner always; anyone signed in when the owner's profile is shown (`hideprofile = false`). A deleted activity, a hidden profile (for others) and an unknown activity are all 404, so nothing is revealed about which exist. The file itself is not checked: a missing one is S3's own 404.
+- **The path is the cache key.** The phone loads `https://…/phone/v3/media/<activityid>/<value>` and its image cache keeps the picture under that address, so the signature that changes on each redirect never defeats the cache. The redirect itself may be kept 10 minutes (`Cache-Control: private, max-age=600`); the files never change under the same name.
+- **The token:** `Authorization: Bearer …`, or the same token as `X-Access-Token` (this route only). The phone's image loader follows the redirect itself and on some platforms keeps `Authorization` when it does, and S3 refuses a request with two kinds of authentication; it ignores `X-Access-Token`. **The phone sends only `X-Access-Token`.**
+- Local development uses MinIO ([dev-s3/README.md](dev-s3/README.md)); production sets only `S3_REGION` and signs with the server's role.
 
 ## 7. Profile and location
 
@@ -186,6 +207,17 @@ Two headers on requests, and one on responses, for the location ([server.md](ser
 - `X-Location: on | off` (request): whether location permission is granted.
 - `X-Ipref: <value>` (request): the last `ipref` the app received.
 - `ipref` (response): the value to send back next time.
+
+## 7b. Profile picture and cover
+
+One file each, in the `fitpy` bucket under `<uuid>.<ext>`; the name is kept in `userinfo.profilepic` (the picture, kind `pic`) and `userinfo.profilebg` (the cover, kind `bg`) and comes back in `GET /profile` (`profile.profilepic`, `profile.profilebg`). The same three steps as the activity media (section 6), and a reset (**built, v3**):
+
+1. `POST /profile/image/presign` with `{ "kind": "pic" | "bg", "contentType": "image/webp", "bytes": 48213 }` answers `{ value, url, headers }`: the server names the file, and the address is valid for 15 minutes, signed for exactly this key, content type and length. Hard caps: **picture 1 MB, cover 3 MB**; `image/webp` or `image/jpeg` only (400 `BAD_MEDIA`). 404 when the user has no profile yet (the new-user setup saves it first).
+2. `PUT url` the file.
+3. `POST /profile/image/commit` with `{ "kind", "value" }`: the server checks the file is there with the right size and type (a `HEAD`; else 400 `BAD_MEDIA` and the file is deleted), sets the column in **one statement that also reads the old name**, then **deletes the old file** (a failed S3 delete is logged and leaves an orphan, never a broken profile). Answers `{ "value": "…" }`. A repeat of the same commit changes and deletes nothing.
+4. `DELETE /profile/image/:kind` goes back to no image: the column is set to NULL and the old file deleted. **204**, also when there was none (idempotent). 404 without a profile.
+
+**Reading:** `GET /profilepic/:userid/:value` and `GET /profilebg/:userid/:value` answer a **302** to a 15-minute signed S3 address, like the activity media. `value` must be **what that user has set now**, so the route cannot be used to read any other file in the bucket (an old name is 404). The owner always; others only when the profile is shown (`hideprofile = false`); else 404. The address holds the file's own name, so a new picture is a new address and the phone's image cache never shows the old one. The token may come as `X-Access-Token` ([section 6](#reading-a-file), the same reason). The feed's `author` carries `profilepic` (the name) so the phone can load it.
 
 ## 8. Delete the account
 
@@ -213,3 +245,67 @@ Two headers on requests, and one on responses, for the location ([server.md](ser
 | `GET /walk` | The user's row: the plain columns, the arrays and `history_base`. Used on a restore. |
 
 `dtgraph` is a date label, not a moment ([README](README.md) section 5). What the server does: [server.md](server.md) section 11. What the phone does: [phone.md](phone.md) section 11. The formats: [format.md](format.md) section 5.
+
+## 11. The feed
+
+`GET /feed?limit=20&before=<cursor>` (phone only) answers `{ posts: [{ kind, author, activity | post }], next }`: a page (`limit` 1 to 50, 20 by default) of the **most recent activities and posts ([section 12](#12-posts)) of users who show their profile** (one user can have several), newest first by `enddate` (then `activityid`). A deleted activity (`tosend = 0`) is not in it. Hidden profiles (`hideprofile`) and users without a profile are not in it. (Earlier it was ordered by the time on the clock where it happened. `enddate` is the same order for nearly everyone and is served by an index, `activities_feed`, [schema.pg.md](schema.pg.md) section 2.)
+
+- **Two kinds of item.** `kind` is `activity` (with `activity`) or `post` (with `post`: `{ postid, posted_at, content, media_v2 }`, section 12). They are merged by time, `enddate` for an activity and `posted_at` for a post; the cursor `<time>.<id>` works for both (ids are random UUIDs, so they never clash). A post with nothing to show yet (made, but no file uploaded and no words) is not in the feed. The index `posts_feed` serves the post side.
+- **A small post.** `activity` is the **summary only**: the small columns, `media_v2`, the description and **`route_preview`** (the route in about 120 points, [format.md](format.md) section 6). It has **no track, no heart rate and no `activitydetail_v2` beyond what a card needs**, so a page is a few KB, not hundreds. It never contains a `userid`. The phone draws the card from it and works the numbers (pace, calories) out itself.
+- **Paging:** `next` is a keyset cursor `<enddate>.<activityid>`, or `null` at the end. Pass it back as `before`. A page never shifts when something new arrives, and equal times cannot be skipped. A bad cursor or `limit` is a 400. **There is no limit per user for now; one is to be added for production.**
+- **ETag.** The first page (no `before`) carries an `ETag` made from what it holds; a request with `If-None-Match` of the same value is answered **304** with no body. The phone sends it with every refresh, so a feed that has not changed costs a few bytes.
+- `author` is `{ userid, fname, lname, weight, profilepic, city, state, iso, country }`. `country` is the name of `iso`. `weight` is the author's, so the phone can estimate calories. `profilepic` is the file name; the picture is read at `/profilepic/:userid/:value` (section 7b).
+- Built in SQL and joined by string, so nothing large is parsed in Node. Read from the reader. Compressed on the wire.
+
+### One whole activity: `GET /feed/:activityid`
+
+Opening a feed card's map lands on the **Activity details** screen, which needs the whole activity (the track, heart rate, elevation). This asks for it: the same row as a restore (section 4) plus the `author`, so the phone unpacks it with the code it has for its own activities. The owner always gets their own; anyone else only while the owner shows their profile, else **404** (the same answer as a deleted activity, so it does not reveal that it exists). The screen draws at once from the preview and **fills in the charts when this arrives** (it never waits); an error is shown in a toast.
+
+### Rate limit and media
+
+The other routes are limited per IP. **The image routes** (`/media/...` read, `/profilepic/...`, `/profilecover/...`) are limited **per token, 600 a minute**, because a feed shows many photos at once. There is no CDN for now.
+
+### On the phone
+
+The feed is **stored in SQLite** (`feed.db`) and read back through a reactive query ([phone.md](phone.md) section 8c). The phone asks for the first page (with the ETag) **when the app starts, when it comes to the front, when someone signs in, and on pull to refresh**: there is no timer, and showing the tab again asks for nothing. It asks for the next page as the user scrolls near the end.
+
+## 12. Posts
+
+What the user shares from Home: a **template** (the day's steps, distance, or both), **photos and videos**, and **words** (a title and a description). A post has an id made on the phone, so a repeat of any call changes nothing. Shape of `content`: [format.md](format.md) section 7. Table: [schema.pg.md](schema.pg.md) section 11.
+
+| Call | What it does |
+|---|---|
+| `PUT /posts/:postid` | Body `{ posted_at, content, media? }`. Makes the post, or changes what it says (its time and media are not changed). Answers `{ status: "created" \| "exists" \| "deleted", media_v2 }`. A post that was deleted answers `deleted` and is not brought back. An id that is another user's is 404. |
+| `DELETE /posts/:postid` | 204. The row stays as a marker (`tosend = 0`, what it said and its media list emptied) and every file under `<postid>/` in S3 goes. A repeat is 204; an unknown id is 404 (the app treats it as done). |
+| `GET /posts?limit=50&before=<cursor>` | The user's own live posts, newest first, `{ posts: [{ postid, posted_at, content, media_v2 }], next }`; cursor `<posted_at>.<postid>`. For a restore. |
+| the media routes | `presign`, `commit`, `DELETE` and the read `GET /media/:id/:value` of [section 6](#6-media-a-pre-signed-upload) take the id of an **activity or a post** (the server finds which). A post may have 20 photos and videos, like an activity. Files are in the same bucket, under `<postid>/`. A post's media is read by others unless its owner hides their profile. |
+
+**The rule.** A post needs **photos or videos coming, a title or a description**. A template alone is refused (400 `BAD_POST`), and so is a template without the numbers it shows (`steps` needs `steps`, `distance` needs `distance`, `steps_distance` needs both). A post may have **no template** (words only). `media` is how many files the phone is about to upload after the PUT; it is not stored, it only allows a post with no words (the files come one at a time and the post exists first).
+
+**The `content` is checked here and stored as it is** (title up to 120 characters, description up to 2000, `steps` and `distance` whole numbers, an unknown field or template is refused 400), and the server never reads inside it afterwards. Adding a field is a line in the schema, not a migration.
+
+**Order of work on the phone:** `PUT` the post, then its files (presign, PUT, commit each, in order), so the post exists before a file is added. A failed or killed upload resumes next time ([phone.md](phone.md) section 8d).
+
+## 13. Weather
+
+The conditions at a point, so an activity can carry the weather it was done in. The phone asks at the **start** of an outdoor activity (or at the end when it was offline) and keeps the answer with the activity; nothing is worked out on the server and nothing is stored there by this route. The keys of the providers are set in the server's environment (`WEATHER_API`, `OPEN_WEATHER_API`, [server.md](server.md) section 13) and never leave it.
+
+| Call | What it does |
+|---|---|
+| `POST /weather` | Body `{ lat, lon }` (degrees, `lat` -90..90, `lon` -180..180). Answers `{ uvi, temp, feels_like, humidity, wind_speed, weather_icon, weather_description, aqi }`. |
+
+- **Units are the ones the activity stores:** `temp` and `feels_like` in **kelvin** (whole numbers), `wind_speed` in **km/h**, `humidity` in %, `uvi` as the UV index, `aqi` 1 (good) to 5 (very poor).
+- `weather_icon` is an OpenWeather icon name (`01d`, `10n`...); `weather_description` is the text to show.
+- **Two providers, in order:** WeatherAPI first (the condition code gives the text and the icon, the PM2.5 gives `aqi`), OpenWeather (`onecall` and `air_pollution`) when it fails or gives no answer within 6 seconds. OpenWeather's wind is in m/s, so it is converted.
+- **Errors:** `502 WEATHER_UNAVAILABLE` when both fail, `503 WEATHER_UNAVAILABLE` when no key is set. The phone keeps the activity as it is and asks again later; a refusal is never a reason to lose or hide the activity.
+
+## 14. Other people's profiles
+
+What the User screen shows (opened from a name on a feed card, or from Settings for your own). Any signed-in user may read these. A profile that is hidden (`hideprofile`), a deleted account and an unknown id are all **404**, except for its owner, who always reads their own; nothing says which exist. There is no follow, followers count or "similar people" yet.
+
+| Call | What it does |
+|---|---|
+| `GET /users/:userid` | `{ user, counts, totals, monthly, bests }`. `user`: `userid, fname, lname, about, profilepic, profilebg, city, state, iso, country, dateregistered` (the pictures are read with `GET /profilepic/:userid/:value` and `/profilebg/...`, [section 7b](#7b-profile-picture-and-cover)). `counts`: `{ activities, photos }` (the photos and videos of their activities and posts). `totals`: `{ distance (m), duration (s) }` all time. `monthly`: up to 36 rows `{ ym "YYYY-MM", n, distance, duration }`, newest first, only months with activities; a month is in the user's own time zone (`seconds_from_gmt`). `bests`: `{ longest_distance (m), longest_duration (s), fastest_sec_per_km }`, each `null` when they have none; the fastest pace counts only activities of 1 km or more. |
+| `GET /users/:userid/feed?limit=20&before=<cursor>&kind=&media=` | A page of **their** activities and posts in exactly the shape and order of [the feed](#11-the-feed) (`{ posts: [{ kind, author, activity \| post }], next }`, newest first by end time, cursor `<time>.<id>`). `kind=activity` or `kind=post` keeps one; `media=true` keeps only those with photos or videos (the Photos tab). Deleted ones are never listed. |
+
+The server only adds up rows it stores. **The phone works out every figure shown** ([phone.md](phone.md) section 8e): this month, this year and all time, the bars (the last twelve months, or the last twelve quarters for all time), and how the bests read. Photos and videos of others are read with the media routes ([section 6](#6-media-a-pre-signed-upload)) as in the feed.

@@ -103,6 +103,7 @@ increments in old rows, so they need no conversion. The app converts the rest wh
 | `dimension` | `[width, height]` in pixels of the file as shown (after rotation), so a card can reserve its space | Not in `MediaItem` yet; add it |
 | `duration` | Video only, seconds | Not in `MediaItem` yet; optional |
 | `poster` | Video only: the still shown until the first frame | `MediaItem.poster` (video) |
+| `blur` | A 4 x 4 grid of colours (16 x 6 hex digits = 96 characters) the card paints while the picture loads. Optional. Made on the phone | `MediaItem.blur` |
 
 Old rows hold `["uuid1.webp", "uuid2.webp"]` (and the richer `media_details`). They are read as photos.
 
@@ -138,3 +139,37 @@ gap of days with no data. Decoding starts from `history_base` and walks back.
 and the deltas are against `dtgraph`. Readers handle both.
 
 Why `history_base` exists: the arrays are now sent once a day, but `dtgraph` moves on every new day. Without the base stored beside the arrays, a `dtgraph` that has moved on would decode the older arrays to the wrong dates.
+
+## 6. The route preview (`route_preview`)
+
+A small version of an activity's route, so a feed card can draw its map without the track. Column `activities.route_preview jsonb` ([schema.pg.md](schema.pg.md) section 2); NULL for an activity with no track.
+
+```json
+{ "p": [lat0, lon0, dlat1, dlon1, dlat2, dlon2, ...] }
+```
+
+- Whole numbers in **1e-5 degrees**: the first point is absolute, every other is the **step** from the point before (the same idea as the track arrays, section 2). Always an even count of at least 4, so at least two points.
+- Made by **simplifying the route with RDP** (Ramer-Douglas-Peucker) at a tolerance of **6 m**, at most **120 points**. When the simplified route has more than 120 points, the 120 most significant are kept (the start and the end always).
+- **The phone makes it when it uploads an activity** (it already has the same RDP for its maps: `previewFromPoints`) and the server only checks the shape (`bad_route_preview`) and stores it. It is **only ever filled in, never replaced** (`COALESCE`), so a repeat upload cannot change it.
+- For activities the phone never sent it (the old app's), the server fills it once with `npm run backfill:preview` in the v3 repo. **Run it on production before the feed goes live.**
+- The phone reads it with `routeFromPreview` and draws it as the route on the card; the details screen uses it too until the whole track arrives.
+
+## 7. Post content (`posts.content`)
+
+What a post says, as JSON. The shape is checked by the API when a post is written and stored as it is; the server never reads inside it.
+
+```json
+{ "v": 1, "template": "steps_distance", "steps": 7240, "distance": 5123, "dtgraph": 1763251200, "title": "Morning", "description": "A slow one." }
+```
+
+| Key | Meaning |
+|---|---|
+| `v` | The version of this shape; always `1` for now. |
+| `template` | Optional: `steps`, `distance` or `steps_distance`. The figures the post shows. Without it the post is words and media only. |
+| `steps` | The **day's steps at the moment of sharing** (a snapshot: the day's total goes on growing, the post does not). Kept with any template, so the template can be changed later (Edit) without asking for the day's totals again; a post made before that may have only the number its template showed. |
+| `distance` | The day's distance in **metres** at the moment of sharing. Kept like `steps`. |
+| `dtgraph` | The day those numbers belong to, a date as midnight UTC (README section 5). |
+| `title` | Up to 120 characters. |
+| `description` | Up to 2000 characters. |
+
+Rules: a template needs the numbers it shows (the API checks); a post with no photos or videos needs a title or a description. **How it is shown:** the pictures are kept clean and the figures are drawn over each photo and video when the post is shown, so changing the template changes them at once; a post with no photos or videos shows only its words (the figures are kept in the content, so they show if pictures are added later). The photos and videos are in a separate column, `media_v2` (section 4), because the upload loop changes them while the author may be editing the words.

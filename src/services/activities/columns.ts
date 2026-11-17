@@ -23,3 +23,8 @@ const OLD_TRACK = `activitydetail, activitybpm`;
 export const ACTIVITY_OUT = `${SUMMARY}, ${TRACK}`;
 /** Everything, old-format columns included. For restore pages. */
 export const ACTIVITY_FULL = `${SUMMARY}, ${TRACK}, ${OLD_SMALL}, ${OLD_TRACK}`;
+
+/** What a feed card needs of an activity: the small fields, the old rows' media names, and the route preview. NOT the track: a card draws `route_preview`, and the
+ *  full activity is read by `GET /feed/:activityid` when the user opens it (docs/data/api.md section 11). */
+export const FEED_ACTIVITY = `activityid, startdate, enddate, dtgraph, ${START}, temp, duration, stepcount, distance, iso, weathericon, weather, city, state,
+  iswatch, description, activitydetail_v2, media_v2, media, route_preview`;

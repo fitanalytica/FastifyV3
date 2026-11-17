@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from 'vitest';
 import { env } from '../../src/config/env.js';
 import { build } from '../../src/app.js';
 
-const KEYS = ['JWE_SECRET', 'PG_WRITER_URL', 'PG_READER_URL', 'PORT', 'JWT_EXPIRY', 'PG_SSL', 'DEV_LOGIN', 'DEV_USER_APPLE', 'DEV_USER_GOOGLE'];
+const KEYS = ['JWE_SECRET', 'PG_WRITER_URL', 'PG_READER_URL', 'PORT', 'JWT_EXPIRY', 'PG_SSL', 'DEV_LOGIN', 'DEV_USER_APPLE', 'DEV_USER_GOOGLE', 'REFRESH_GRACE_SECONDS'];
 let saved: Record<string, string | undefined>;
 beforeEach(() => { saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]])); });
 afterEach(() => { for (const k of KEYS) saved[k] === undefined ? delete process.env[k] : (process.env[k] = saved[k]); });
@@ -45,4 +45,17 @@ test('dev users per provider: a userid, lower-cased, or nothing; anything else i
   expect(env().devUsers.apple).toBe('e0779e72-f607-44e2-88de-5f164bb6e1da');
   process.env.DEV_USER_GOOGLE = 'not-a-uuid';
   expect(() => env()).toThrow(/DEV_USER_GOOGLE/);
+});
+
+test('the refresh grace is 30 days unless set (a short one for local testing), and a bad value is refused', () => {
+  delete process.env.REFRESH_GRACE_SECONDS;
+  expect(env().refreshGraceSeconds).toBe(30 * 24 * 3600);
+  process.env.REFRESH_GRACE_SECONDS = '120';
+  expect(env().refreshGraceSeconds).toBe(120);
+  for (const bad of ['abc', '0', '-5', '1.5']) {
+    process.env.REFRESH_GRACE_SECONDS = bad;
+    expect(() => env(), bad).toThrow(/REFRESH_GRACE_SECONDS/);
+  }
+  process.env.REFRESH_GRACE_SECONDS = '';
+  expect(env().refreshGraceSeconds).toBe(30 * 24 * 3600);
 });

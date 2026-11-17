@@ -76,7 +76,7 @@ folder of fixtures (JSON in, JSON out):
 17. **The other tables**, one at a time ([schema.pg.md](schema.pg.md) section 10). `walkdata` done; `streak_logs` paused; `app_sync`, `sync_body` and `user_sessions` are testing tables and optional, to be dropped. Not seen: `app_sync_sandbox`, `user_topics`, `weightmanagement`, `protection_logs`, `reviews` and the rest.
 18. ~~`tosend` already has a meaning.~~ Resolved: it only holds 0, 1 or 2 and nothing else uses it.
 19. ~~Login, refresh and logout.~~ Seen. `JWT_EXPIRY` is 7 days; the refresh token has no expiry of its own.
-20. ~~A refresh whose reply is lost signs the user out.~~ Decided: the previous refresh value is accepted for 2 minutes ([server.md](server.md) section 10).
+20. ~~A refresh whose reply is lost signs the user out.~~ Decided: the previous refresh value is accepted for 30 days, a sliding window ([server.md](server.md) section 10).
 21. ~~What does iOS store in `usertokens.device`?~~ Resolved: the hardware model.
 22. ~~Key `usertokens` on the device, not the model.~~ Decided: key on `deviceid` = `getUniqueId()` (not `downloadid`). `downloadid` stays a random UUID per download of the app, so it counts downloads.
 23. ~~Android's `deviceid`.~~ Decided: the app creates a UUID on its first launch and keeps it ([phone.md](phone.md) section 1); a reinstall makes a new row, removed after 365 days.

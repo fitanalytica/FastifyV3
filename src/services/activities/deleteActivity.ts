@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { errors } from '../../errors/AppError.js';
 import { ErrorCode } from '../../errors/codes.js';
+import { deleteFolder } from '../media/s3Ops.js';
 
 // docs/data/server.md section 4. The row stays as a marker (tosend = 0) so a late upload of the same id is answered `deleted`;
 // the large columns are emptied and the small summary is kept.
-// NOT DONE YET: removing the files under activitees/<activityid>/ in S3 (comes with the media slice).
+// Then every file under activitees/<activityid>/ in S3 goes (old media included). A failed S3 delete leaves orphan files for a clean-up job and never
+// fails the delete; a repeat delete tries again.
 const MARK_DELETED = `
   UPDATE activities SET tosend = 0,
     activitydetail_v2 = NULL, activitybpm_v2 = NULL, activitylat = NULL, activitylon = NULL, activitytimenow = NULL,
@@ -18,7 +20,9 @@ const MARK_DELETED = `
 export async function deleteActivity(app: FastifyInstance, userid: string, activityid: string): Promise<void> {
   const w = app.pg.writer;
   const done = await w.query(MARK_DELETED, [activityid, userid]);
-  if (done.rowCount) return;
-  const marker = await w.query('SELECT 1 FROM activities WHERE activityid = $1 AND userid = $2', [activityid, userid]);
-  if (!marker.rowCount) throw errors.NotFound('Unknown activity', ErrorCode.NOT_FOUND);
+  if (!done.rowCount) {
+    const marker = await w.query('SELECT 1 FROM activities WHERE activityid = $1 AND userid = $2', [activityid, userid]);
+    if (!marker.rowCount) throw errors.NotFound('Unknown activity', ErrorCode.NOT_FOUND);
+  }
+  await deleteFolder(activityid).catch((e) => app.log.error({ err: e, activityid }, 'activity files not deleted from S3 (orphans)'));
 }

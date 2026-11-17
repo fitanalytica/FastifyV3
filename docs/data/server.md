@@ -59,7 +59,7 @@ A file that was uploaded but never committed is removed by the next clean-up of 
 3. Answer 204. An unknown id answers 404. A failed S3 delete leaves an orphan file for a clean-up job, never a broken activity.
 
 **Built so far (v3):** steps 2 and 3. Step 1 (the S3 files) comes with the media slice, because nothing writes files yet. A repeat delete is 204 and does not rewrite the marker; another user's id is 404.
-**Not done yet: removing `activitees/<activityid>/` in S3** (README open item 28).
+**Built: removing `activitees/<activityid>/` in S3** after the row is marked (a failed S3 delete is logged and never fails the delete; a repeat delete tries again). Code: `services/media/s3Ops.ts` (`deleteFolder`).
 
 **The marker stops a deleted activity coming back.** The upsert keeps the lower `tosend` (section 2), so an upload of a
 deleted id (a watch that uploads late) stays `0` and is answered `deleted`, and that device removes its copy.
@@ -87,6 +87,9 @@ The reply is built in SQL (`json_agg`) and sent as JSON **text**: the large arra
 | Activity media | `activitees` | `<activityid>/<value>` |
 | Profile picture, cover | `fitpy` | `<value>` |
 
+- **Reading** is `GET /media/:activityid/:value`: a 302 to a 15 minute pre-signed GET ([api.md](api.md) section 6). The server signs locally and makes no S3 request. Config: `S3_REGION`, `S3_BUCKET_MEDIA` (`activitees`), `S3_BUCKET_PROFILE` (`fitpy`); for a stand-in also `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`.
+- **Writing** (`services/media/`: `presign.ts`, `commit.ts`, `removeMedia.ts`, `limits.ts`): see [api.md](api.md) section 6. Caps: photo 5 MB, video 40 MB, poster 2 MB; 20 items per activity; the commit is one `UPDATE` that appends only if the value is not already there and the list is not full.
+- **Profile pictures and covers** (`services/media/profileImage.ts`): see [api.md](api.md) section 7b. Caps: picture 1 MB, cover 3 MB. Setting one is a single `UPDATE userinfo … FROM (SELECT … FOR UPDATE)` that returns the old name (a `WITH … RETURNING (SELECT …)` does not: it sees the row after the update), so the old file can be deleted; the column name comes from a fixed table, never from the request.
 - The presign step checks the owner, `tosend > 0` and the size cap for the role, and signs a PUT for that exact key, content type and length.
 - The commit step checks that the object exists with the right size and type (a `HEAD`), then, in one statement:
 
@@ -175,14 +178,16 @@ DELETE FROM usertokens
 `accessed_date` is only written when it is more than an hour old, and `changed_date` moves on each login and refresh, so an active device is never deleted.
 A refresh token has no expiry of its own today, so this is also its longest life.
 
-## 10. Refresh with a grace period
+## 10. Refresh with a long grace period
 
-So that a refresh whose reply is lost does not sign the user out, the row keeps the refresh value from before the last rotation (`prev_refresh_token`, `prev_changed_date`) for 2 minutes.
+So that a refresh whose reply is lost never signs the user out, the row keeps the refresh value from before the last rotation (`prev_refresh_token`, `prev_changed_date`) for **30 days in production**, and the window slides. The length is the setting `REFRESH_GRACE_SECONDS` (unset = 30 days; local testing sets `120`, 2 minutes, in `.env.local`). (A reply is lost when the app is killed, crashes or is reloaded between the server rotating and the phone saving the new value; with a short window the user was signed out for no reason of their own.)
 
-1. A refresh finds the row where `refresh_token = :hash` (or the raw old value), or where `prev_refresh_token = :hash AND prev_changed_date > now - 120`, and `revoked = FALSE`.
-2. It makes new access and refresh values and replaces both. **If the refresh matched the current value**, it also stores the old one: `prev_refresh_token = old refresh_token`, `prev_changed_date = now`.
-   **If it matched the previous value** (a retry), it leaves `prev_refresh_token` and `prev_changed_date` as they were, so a second lost reply can be retried too, until 2 minutes after the first rotation.
-3. It returns the new pair. Any other refresh value, or the previous one after 2 minutes, answers `LOGOUT`.
+1. A refresh finds the row where `refresh_token = :hash` (or the raw old value), or where `prev_refresh_token = :hash AND prev_changed_date > now - 30 days`, and `revoked = FALSE`.
+2. It makes new access and refresh values and replaces both. **If the refresh matched the current value**, it also stores the old one: `prev_refresh_token = old refresh_token`, so using the newest value always replaces the previous one.
+   **If it matched the previous value** (a retry), it leaves `prev_refresh_token` as it was, so a second lost reply can be retried too, and sets `prev_changed_date = now` (the window slides: each retry moves it on).
+3. It returns the new pair. Any other refresh value, or the previous one after the grace without a retry, answers `LOGOUT`.
+
+The cost: a stolen old value works until the real next one is used, or for 30 days at most. A device is still signed out at once by `revoked` (logout, unpairing, account deletion).
 
 ## 11. Step history
 
@@ -253,3 +258,19 @@ rewritten about once a day instead of on every sync.
 - **Two column lists** (`columns.ts`), built from the same four parts: the small fields, the track, the old small columns (`media`, `media_details`), the old track (`activitydetail`, `activitybpm`). A restore page has all four; the inbox has the first two (watch rows are new-format).
 - **Compression:** replies are gzip at level 1 ([api.md](api.md) section 4 has the measurement).
 - Nothing is cached ([README](README.md) ground rule 9).
+
+## The feed
+
+`GET /feed` and `GET /feed/:activityid` ([api.md](api.md) section 11) are built from `activities` and `userinfo` in SQL. A page is the small columns plus `route_preview`; it is ordered by `enddate DESC, activityid DESC` (index `activities_feed`) and carries an ETag (304 when unchanged). The server never works a route out: the phone sends `route_preview` with the activity ([format.md](format.md) section 6), and the server stores it (only filled in, never replaced). `npm run backfill:preview` fills it for rows the phone never sent. Image routes have their own limit: 600 a minute per token.
+
+## Posts
+
+`PUT/DELETE /posts/:postid` and `GET /posts` ([api.md](api.md) section 12) store what a user shares from Home. `posts.content` is JSON that the API checks (TypeBox, `schemas/posts.ts`) and then stores as it is; `media_v2` has its own column. The media routes find whether an id is an activity or a post (`services/media/owner.ts`) and run the same code on the right table, so there is one media implementation. The feed merges the two tables by time in one query (each side is cut to a page by its own index, then merged). A deleted post stays as a marker (`tosend = 0`) with its words and media emptied and its S3 folder removed. The rule "media coming, a title or a description" is the API's, not a CHECK: see [schema.pg.md](schema.pg.md) section 11.
+
+## 13. Weather
+
+`POST /phone/v3/weather` ([api.md](api.md) section 13) calls WeatherAPI, and OpenWeather when that fails (`src/services/weather/getWeather.ts`, ported from the old API's `getWeather`). The WeatherAPI condition code gives the text and the icon (`src/services/weather/conditions.ts`; the icon gets `d` from 06:00 to 17:59 at the place, `n` otherwise), PM2.5 gives the 1..5 index (below 10, 25, 50, 75, then above). Nothing is stored. `WEATHER_API` and `OPEN_WEATHER_API` are read per call from the environment (`.env.local` locally, never committed, and not in `.env.test`); the tests stub `fetch`.
+
+## 14. Other people's profiles
+
+`GET /phone/v3/users/:userid` (`services/users/getUserProfile.ts`) runs four small reads in parallel on the reader: the `userinfo` row, one row per month for the last 36 (`GROUP BY` the month in the user's own `seconds_from_gmt`; it uses `activities_user_start`), the all-time totals with the three bests, and the number of photos (the length of every `media_v2` of their activities and posts; an old row's `media` names are not counted). `GET /phone/v3/users/:userid/feed` (`getUserFeed.ts`) is the feed's query for one user: each side (activities, posts) is read newest first with its own index and cut to a page, merged and cut again; `kind` leaves one side out and `media` adds `media_v2 <> '[]'` (only fixed fragments are joined into the SQL, values go through `$1..$4`). Both are 404 for a hidden profile unless it is the caller's own, and for a deleted account. Nothing is cached; the screen asks when it opens.

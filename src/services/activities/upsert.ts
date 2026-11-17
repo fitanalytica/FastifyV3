@@ -10,7 +10,7 @@ const COLS = `activityid uuid, downloadid uuid, startdate int, enddate int, dtgr
   duration int, stepcount int, distance int, wind real, uvi real, iso text, weathericon text, weather text,
   city text, state text, aqi smallint, iswatch boolean, description text,
   activitydetail_v2 jsonb, activitybpm_v2 jsonb, activitylat jsonb, activitylon jsonb, activitytimenow jsonb,
-  activityelevation jsonb, activitydistance jsonb, device jsonb, media_v2 jsonb`;
+  activityelevation jsonb, activitydistance jsonb, device jsonb, media_v2 jsonb, route_preview jsonb`;
 
 // A JSON null arrives as jsonb 'null': store SQL NULL instead, so empty columns look the same as before.
 const J = (c: string) => `NULLIF(${c}, 'null'::jsonb)::json`;
@@ -21,18 +21,20 @@ const SQL = `
 INSERT INTO activities (activityid, userid, downloadid, startdate, enddate, dtgraph, lat, lon, geom,
   temp, realfeel, humidity, duration, stepcount, distance, wind, uvi, iso, weathericon, weather, city, state, aqi,
   iswatch, description, activitydetail_v2, activitybpm_v2, activitylat, activitylon, activitytimenow,
-  activityelevation, activitydistance, device, media_v2, tosend)
+  activityelevation, activitydistance, device, media_v2, route_preview, tosend)
 SELECT activityid, $2::uuid, downloadid, startdate, enddate, dtgraph, lat, lon, ST_SetSRID(ST_MakePoint(lon, lat), 4326),
   temp, realfeel, humidity, duration, stepcount, distance, wind, uvi, left(iso, 2), left(weathericon, 3),
   left(weather, 100), left(city, 50), left(state, 50), aqi,
   COALESCE(iswatch, false), description, ${J('activitydetail_v2')}, ${J('activitybpm_v2')}, ${J('activitylat')},
   ${J('activitylon')}, ${J('activitytimenow')}, ${J('activityelevation')}, ${J('activitydistance')}, ${J('device')},
-  COALESCE(NULLIF(media_v2, 'null'::jsonb), '[]'::jsonb), $3::smallint
+  COALESCE(NULLIF(media_v2, 'null'::jsonb), '[]'::jsonb), NULLIF(route_preview, 'null'::jsonb), $3::smallint
 FROM jsonb_to_recordset($1::jsonb) AS x(${COLS})
 ON CONFLICT (activityid) DO UPDATE
    SET tosend      = LEAST(activities.tosend, EXCLUDED.tosend),
        media_v2    = CASE WHEN activities.tosend > 0 THEN EXCLUDED.media_v2    ELSE activities.media_v2    END,
-       description = CASE WHEN activities.tosend > 0 THEN EXCLUDED.description ELSE activities.description END
+       description = CASE WHEN activities.tosend > 0 THEN EXCLUDED.description ELSE activities.description END,
+       -- the route preview is made from the track, which a resend never changes: it is only ever filled in, never replaced
+       route_preview = CASE WHEN activities.tosend > 0 THEN COALESCE(activities.route_preview, EXCLUDED.route_preview) ELSE activities.route_preview END
    WHERE activities.userid = EXCLUDED.userid
 RETURNING activityid, tosend, (xmax = 0) AS inserted`;
 

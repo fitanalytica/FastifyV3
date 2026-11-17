@@ -1,4 +1,5 @@
 import type { ActivityInput, ParsedActivity } from '../../types/index.js';
+import { isRoutePreview } from './preview.js';
 
 // docs/data/api.md section 2. Only what would break the write or the data is checked here:
 // the server never reads inside the JSON columns.
@@ -41,6 +42,7 @@ export function invalidReason(a: Raw, owned: ReadonlySet<string>): string | null
   // without it would read as an old row, and its compact arrays would be taken from the wrong start. A resend without a track may leave both out.
   if (len !== undefined && nul(a.activitydetail_v2)) return 'missing_activitydetail_v2';
   if (!nul(a.media_v2) && !Array.isArray(a.media_v2)) return 'bad_media';
+  if (!nul(a.route_preview) && !isRoutePreview(a.route_preview)) return 'bad_route_preview';
   if (typeof a.downloadid !== 'string' || !owned.has(a.downloadid)) return 'bad_downloadid';
   return null;
 }

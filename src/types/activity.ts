@@ -35,6 +35,8 @@ export interface ActivityInput {
   device?: Record<string, unknown> | null;
   /** Stored as received; the media slice defines the items (format.md section 4). */
   media_v2?: unknown[] | null;
+  /** A small route for the feed, `{ p: [lat0, lon0, dlat1, dlon1, ...] }` (format.md section 6); made by the phone. */
+  route_preview?: { p: number[] } | null;
 }
 
 export type ActivityStatus = 'created' | 'exists' | 'deleted';

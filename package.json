@@ -8,9 +8,12 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p .",
-    "test": "dotenv -e .env.test -- vitest run"
+    "test": "dotenv -e .env.test -- vitest run",
+    "backfill:preview": "dotenv -e .env.local -- tsx scripts/backfill-route-preview.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1169.0",
+    "@aws-sdk/s3-request-presigner": "^3.1169.0",
     "@fastify/compress": "^9.3.0",
     "@fastify/cors": "^11.4.3",
     "@fastify/helmet": "^13.2.0",

@@ -9,7 +9,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     pg: { reader: Pool; writer: Pool };
     /** `authenticate('phone')` checks the token of a phone route (refuses a watch token); `'watch'` the reverse. See hooks/authenticate.ts. */
-    authenticate: (kind: Kind) => Authenticate;
+    authenticate: (kind: Kind, opts?: { altHeader?: string }) => Authenticate;
   }
   interface FastifyRequest {
     auth?: AuthInfo;

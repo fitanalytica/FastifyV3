@@ -25,4 +25,6 @@ export const errors = {
   UnprocessableEntity: mk(422, 'Unprocessable Entity'),
   TooManyRequests: mk(429, 'Too Many Requests'),
   Internal: mk(500, 'Internal Server Error'),
+  BadGateway: mk(502, 'Bad Gateway'),
+  Unavailable: mk(503, 'Service Unavailable'),
 };

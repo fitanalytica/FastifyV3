@@ -1,5 +1,5 @@
 import type { Static } from '@sinclair/typebox';
-import type { DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
+import type { RedeemBodySchema, PurchaseIosBodySchema, AppStoreNotificationBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
 import type { AckBodySchema, ActivityIdParamsSchema, BatchBodySchema, DevLoginBodySchema, FeedQuerySchema, CommitBodySchema, InboxQuerySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, LogoutBodySchema, MediaParamsSchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema, WearableRestoreQuerySchema, LocationBodySchema } from '../schemas/index.js';
 
 // Request bodies, queries and params come from the schemas (src/schemas): one definition for the check and the type.
@@ -24,6 +24,10 @@ export type PostContent = Static<typeof PostContentSchema>;
 export type PutPostBody = Static<typeof PutPostBodySchema>;
 export type PostsQuery = Static<typeof PostsQuerySchema>;
 export type FeedQuery = Static<typeof FeedQuerySchema>;
+export type StateQuery = Static<typeof StateQuerySchema>;
+export type RedeemBody = Static<typeof RedeemBodySchema>;
+export type PurchaseIosBody = Static<typeof PurchaseIosBodySchema>;
+export type AppStoreNotificationBody = Static<typeof AppStoreNotificationBodySchema>;
 export type WearableRestoreQuery = Static<typeof WearableRestoreQuerySchema>;
 
 // Replies.

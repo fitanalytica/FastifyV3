@@ -356,6 +356,10 @@ CREATE TABLE account_deletion_codes (
 ```
 One row per user, replaced by each new code, gone with the user. The script: `dev-db/07-account-deletion-v3.sql` (run on production too).
 
+## 8c. Billing tables of the old app that v3 reads
+
+The store's catalogue is **not** a table (it is data in the server's code, docs/data/api.md section 15). v3 only **reads** these tables of the old app and never changes them in a migration (the v2 API keeps writing them): `membership` (and `membership_sandbox`: one row per seat or plan; an empty `invite_code` is the buyer's own; `expires_date` is in **mixed units**, see api.md section 15) and `protection_logs` (`iap` rows are purchases; `transaction_id` is a **bigint** and unique). Local stand-ins with the real columns are in `dev-db/08-billing-standin.sql` (**never on production**).
+
 ## 9. Other tables that point at `userlogin` and `downloads`
 
 From the `Referenced by` lists. I have not seen any of these tables.

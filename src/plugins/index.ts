@@ -10,6 +10,8 @@ import db from './db.js';
 
 /** Requests a minute for the picture routes (`GET /media/...`, `/profilepic/...`, `/profilebg/...`), per token. */
 export const IMAGE_RATE_LIMIT = 600;
+/** Redeeming a code: tries a minute per token, so codes cannot be guessed. */
+export const REDEEM_RATE_LIMIT = 10;
 const IMAGE_ROUTE = /\/(media\/:activityid\/:value|profilepic\/:userid\/:value|profilebg\/:userid\/:value)$/;
 
 /** Every plugin the app needs, in the order they must load. */
@@ -27,6 +29,9 @@ export async function registerPlugins(app: FastifyInstance) {
     // Signing in is open to anyone, so it is limited more than the rest (per address): LOGIN_RATE_LIMIT a minute, 20 by default. Read at each request.
     if ([route.method].flat().includes('POST') && /\/auth\/login$/.test(route.url)) {
       route.config = { ...route.config, rateLimit: { max: () => env().loginRateLimit, timeWindow: '1 minute' } };
+    }
+    if ([route.method].flat().includes('POST') && /\/redeem$/.test(route.url)) {
+      route.config = { ...route.config, rateLimit: { max: REDEEM_RATE_LIMIT, timeWindow: '1 minute', keyGenerator: (req: { headers: Record<string, unknown>; ip: string }) => String(req.headers.authorization ?? req.ip) } };
     }
     if ([route.method].flat().includes('GET') && IMAGE_ROUTE.test(route.url)) {
       route.config = {

@@ -223,6 +223,8 @@ The same shape as the server's row, so a post goes up and comes back without con
 |---|---|---|
 | `profile` | JSON | The user's profile ([phone.md](phone.md) section 9) |
 | `profile_synced` | boolean | `false` when an edit has not been sent |
+| `store-state` | JSON | The Pro state and the catalogue ([phone.md](phone.md) section 9c): `accountToken`, `entitlement`, `grants`, `catalog`, `refreshedAt`, `pendingInvite` (a link's code that came before sign-in). A copy only: the server owns it. Cleared when a different account signs in. |
+| `ads-state` | JSON | The ad rules and the pacing of ads ([phone.md](phone.md) section 9f): `config` (a copy of the server's rules for this platform), `history` (when each full-screen ad was shown, the last 24 hours, and when the last of any kind was), `quietUntil` (the quiet time after a purchase, ms). The pacing is the phone's own and is kept across sign-outs; `quietUntil` is forgotten at sign-out. |
 | `ipref` | string | The last `ipref` from the server, sent back as `X-Ipref`. Dropped when the user turns location off. |
 | `restore_userid` | string | Whose restore the next four keys belong to. A different user signing in drops them and starts again. |
 | `restore_cursor` | string | The next page of a restore (`<startdate>.<activityid>`). Removed when the restore is done. |

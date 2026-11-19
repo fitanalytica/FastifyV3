@@ -29,6 +29,18 @@ export const ErrorCode = {
   DELETE_FAILED: 'DELETE_FAILED',
   /** Neither weather provider answered, or no key is set (docs/data/api.md section 13). The app tries again later. */
   WEATHER_UNAVAILABLE: 'WEATHER_UNAVAILABLE',
+  /** The purchase could not be checked with the store (not signed by the store, or for another app), or it is for a product that is not on the list (docs/data/api.md section 15). */
+  PURCHASE_REFUSED: 'PURCHASE_REFUSED',
+  /** Purchases are not set up on the server (docs/data/api.md section 15): the phone keeps the purchase and tries again later. */
+  STORE_UNAVAILABLE: 'STORE_UNAVAILABLE',
+  /** Redeeming a code (docs/data/api.md section 15): there is no such code. */
+  CODE_INVALID: 'CODE_INVALID',
+  /** The code has been redeemed already (by someone else, or by the user: the message says which). */
+  CODE_USED: 'CODE_USED',
+  /** The user already has an active Pro membership, so a code would give nothing. */
+  ALREADY_PRO: 'ALREADY_PRO',
+  /** The shared membership has already ended. */
+  CODE_EXPIRED: 'CODE_EXPIRED',
   /** An error with no specific code. */
   UNHANDLED: 'UNHANDLED',
 } as const;

@@ -1,7 +1,14 @@
 import { FastifyInstance } from 'fastify';
+import { appStoreNotificationV3 } from '../../controller/store/v3/appstorenotification.js';
+import { AppStoreNotificationBodySchema } from '../../schemas/index.js';
 
-// The App Store and Play Store routes (v2: appstore/ and playstore/ under the "store" subdomain).
-// Nothing is specified for v3 yet, so there are no routes here.
-async function storeRouter(_fastify: FastifyInstance) {}
+// The App Store and Play Store notifications (v2: appstore/ and playstore/ under the "store" subdomain). Not signed in: the store's own signature is the proof, checked in the service.
+async function storeRouterV3(fastify: FastifyInstance) {
+  fastify.post('/appstore', { schema: { body: AppStoreNotificationBodySchema } }, appStoreNotificationV3);
+}
+
+async function storeRouter(fastify: FastifyInstance) {
+  fastify.register(storeRouterV3, { prefix: 'store/v3' });
+}
 
 export default storeRouter;

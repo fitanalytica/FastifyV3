@@ -18,12 +18,14 @@ export interface Env {
   /** The weather providers' keys (docs/data/api.md section 13). Without both the weather route answers 503. Never committed: they are set in the environment. */
   weather: { weatherApiKey?: string; openWeatherKey?: string };
   /** Sign in with Apple and Google (docs/data/api.md section 1b). Without a client id for a provider, its login answers 503. The key is never committed. */
-  apple: { clientId: string; teamId?: string; keyId?: string; privateKeyPath?: string; privateKey?: string };
+  apple: { clientId: string; /** The App Store's numeric id of the app (APPLE_APP_ID): needed to check production purchases and notifications. */ appId?: number; teamId?: string; keyId?: string; privateKeyPath?: string; privateKey?: string };
   google: { clientIds: string[] };
   /** E-mail goes out through an SNS topic that something else turns into mail (docs/data/api.md section 8b). Without `topicArn` no e-mail is sent. Credentials: the server's role, or AWS_* variables locally. */
   sns: { topicArn?: string; region: string };
   /** How many sign-ins one address may try in a minute (the sign-in route is open to anyone, so it is limited more than the rest). */
   loginRateLimit: number;
+  /** Which billing tables the Pro state reads (docs/data/api.md section 15): `production` (the default), `sandbox` (the `_sandbox` copies) or `both` (a server that also serves TestFlight and App Review). */
+  billingEnv: 'production' | 'sandbox' | 'both';
 }
 
 /** Where the media lives (docs/data/server.md section 6). In production only the region is set: the credentials come from the server's role. */
@@ -64,6 +66,12 @@ function refreshGrace(value: string | undefined): number {
   return n;
 }
 
+function billingEnv(value: string | undefined): 'production' | 'sandbox' | 'both' {
+  if (!value) return 'production';
+  if (value === 'production' || value === 'sandbox' || value === 'both') return value;
+  throw new Error(`BILLING_ENV must be production, sandbox or both, got "${value}"`);
+}
+
 /** Read on each call (it is cheap) so a test can change a variable. `build()` calls it first, so a missing variable stops the start with a clear message. */
 export function env(): Env {
   const e = process.env;
@@ -93,6 +101,7 @@ export function env(): Env {
     weather: { weatherApiKey: e.WEATHER_API || undefined, openWeatherKey: e.OPEN_WEATHER_API || undefined },
     apple: {
       clientId: e.APPLE_CLIENT_ID || 'com.fitanalytica',
+      appId: Number(e.APPLE_APP_ID) > 0 ? Number(e.APPLE_APP_ID) : undefined,
       teamId: e.APPLE_TEAM_ID || undefined,
       keyId: e.APPLE_KEY_ID || e.APPLE_SIGNIN_KEYID || undefined,
       privateKeyPath: e.APPLE_PRIVATE_KEY_PATH || undefined,
@@ -101,6 +110,7 @@ export function env(): Env {
     },
     sns: { topicArn: e.SNS_ARN || undefined, region: e.SNS_REGION || 'us-east-1' },
     loginRateLimit: Number(e.LOGIN_RATE_LIMIT) > 0 ? Number(e.LOGIN_RATE_LIMIT) : 20,
+    billingEnv: billingEnv(e.BILLING_ENV),
     google: { clientIds: (e.GOOGLE_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
   };
 }

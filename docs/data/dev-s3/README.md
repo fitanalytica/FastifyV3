@@ -21,3 +21,16 @@ S3_SECRET_ACCESS_KEY=minioadmin
 - The data is in `~/.fitanalytica-minio`, outside the repo. Delete that folder to start again.
 - **From the simulator** the address in a signed link is `localhost:9000`, which is the Mac for the iOS simulator. The Android emulator reaches the Mac at `10.0.2.2`, so there set `S3_ENDPOINT=http://10.0.2.2:9000` in `.env.local`.
 - The tests (`npm test`) never connect: they only check the signed addresses.
+
+## A real Android phone (or the emulator) over USB
+
+The server answers a photo or video with a redirect to the store at `S3_ENDPOINT` (`http://localhost:9000`), and an upload goes to the same address. On a phone `localhost` is the phone, so give it a tunnel to the Mac once for each connection (and again after unplugging):
+
+```sh
+adb reverse tcp:9000 tcp:9000   # this store
+adb reverse tcp:3003 tcp:3003   # the API
+adb reverse tcp:8081 tcp:8081   # Metro
+```
+
+The signed address names `localhost:9000`, so the phone must call exactly that: do not change `S3_ENDPOINT` to the Mac's network address for the phone, or the signature no longer matches.
+

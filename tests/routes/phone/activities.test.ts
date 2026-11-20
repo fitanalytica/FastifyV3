@@ -1,7 +1,8 @@
 import { test, expect, beforeAll, afterAll, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { build, createAccount, type Account, type TestApp } from '../../helpers/app.js';
-import { PHONE_BATCH, activity, activityRow, bearer } from '../../helpers/fixtures.js';
+import { activity, activityRow, bearer } from '../../helpers/fixtures.js';
+import { phoneBatch, sync } from '../../helpers/viaSync.js';
 
 let app: TestApp;
 let me: Account, other: Account;
@@ -10,8 +11,7 @@ beforeAll(async () => { app = await build(); me = await createAccount(app); othe
 afterAll(async () => { await me.remove(); await other.remove(); await app.close(); });
 
 const act = (over: Record<string, unknown> = {}) => activity(me.phoneDownloadid, over);
-const post = (token: string | null, activities: unknown) =>
-  app.inject({ method: 'POST', url: PHONE_BATCH, headers: token ? bearer(token) : {}, payload: { activities } });
+const post = (token: string | null, activities: unknown) => phoneBatch(app, token, activities);
 const send = (activities: unknown) => post(me.phoneToken, activities);
 
 test('creates a row: owner from the token, tosend from the device, geom from lat/lon, nulls stay NULL', async () => {
@@ -111,7 +111,8 @@ test('a data error in one item falls back to one write per item', async () => {
 test('limits and auth', async () => {
   expect((await send([])).json().code).toBe('BAD_BATCH');
   expect((await send('x')).statusCode).toBe(400);
-  expect((await send(Array.from({ length: 21 }, () => act()))).json().code).toBe('BAD_BATCH');
+  // The call takes 20 at a time: a 21st in one `send` refuses the activities section (the phone never sends more).
+  expect((await sync(app, me.phoneToken, { activities: { send: Array.from({ length: 21 }, () => act()) } })).json().results.activities).toEqual({ ok: false, code: 'BAD_REQUEST' });
   expect((await send(Array.from({ length: 20 }, () => act()))).statusCode).toBe(200);
   expect((await post(null, [act()])).json().code).toBe('INVALID_TOKEN_FORMAT');
   expect((await post('a.b.c', [act()])).json().code).toBe('LOGOUT');
@@ -119,9 +120,9 @@ test('limits and auth', async () => {
 
 test('a gzip-compressed body is accepted', async () => {
   const a = act();
-  const res = await app.inject({ method: 'POST', url: PHONE_BATCH,
+  const res = await app.inject({ method: 'POST', url: '/phone/v3/sync',
     headers: { ...bearer(me.phoneToken), 'content-type': 'application/json', 'content-encoding': 'gzip' },
-    payload: gzipSync(JSON.stringify({ activities: [a] })) });
+    payload: gzipSync(JSON.stringify({ up: { activities: { send: [a] } } })) });
   expect(res.statusCode).toBe(200);
-  expect(res.json().results[0].status).toBe('created');
+  expect(res.json().results.activities.send[0].status).toBe('created');
 });

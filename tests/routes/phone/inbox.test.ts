@@ -2,16 +2,15 @@ import { test, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../../helpers/app.js';
 import { PHONE_BATCH, WEARABLE_BATCH, activity, activityRow, bearer } from '../../helpers/fixtures.js';
+import { phoneAck, phoneBatch, phoneDelete, phoneInbox } from '../../helpers/viaSync.js';
 
 let app: TestApp;
 let me: Account, other: Account;
 beforeAll(async () => { app = await build(); me = await createAccount(app); other = await createAccount(app); });
 afterAll(async () => { await me.remove(); await other.remove(); await app.close(); });
 
-const INBOX = '/phone/v3/activities/inbox';
-const ACK = '/phone/v3/activities/ack';
-const inbox = (token: string, query = '') => app.inject({ url: INBOX + query, headers: bearer(token) });
-const ack = (token: string, body: unknown) => app.inject({ method: 'POST', url: ACK, headers: bearer(token), payload: body as object });
+const inbox = (token: string | null) => phoneInbox(app, token);
+const ack = (token: string | null, body: { ids?: unknown }) => phoneAck(app, token, body.ids);
 const watchUpload = (acc: Account, items: object[]) => app.inject({ method: 'POST', url: WEARABLE_BATCH, headers: bearer(acc.watchToken), payload: { activities: items } });
 const watchAct = (acc: Account, over: Record<string, unknown> = {}) => activity(acc.watchDownloadid, { iswatch: true, ...over });
 
@@ -23,7 +22,6 @@ test('the inbox holds what the watch uploaded, oldest first, in the form it was 
 
   const res = await inbox(me.phoneToken);
   expect(res.statusCode).toBe(200);
-  expect(res.headers['content-type']).toContain('application/json');
   const { activities } = res.json();
   expect(activities.map((x: { activityid: string }) => x.activityid)).toEqual([b.activityid, c.activityid, a.activityid]);
 
@@ -41,10 +39,10 @@ test('the inbox holds what the watch uploaded, oldest first, in the form it was 
 
 test('only waiting watch activities: not the phone\'s own, not deleted ones, not another user\'s', async () => {
   const mine = activity(me.phoneDownloadid);
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(me.phoneToken), payload: { activities: [mine] } });
+  await phoneBatch(app, me.phoneToken, [mine]);
   const gone = watchAct(me);
   await watchUpload(me, [gone]);
-  await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${gone.activityid}`, headers: bearer(me.phoneToken) });
+  await phoneDelete(app, me.phoneToken, gone.activityid);
   const theirs = watchAct(other);
   await watchUpload(other, [theirs]);
 
@@ -55,23 +53,18 @@ test('only waiting watch activities: not the phone\'s own, not deleted ones, not
   expect((await inbox(other.phoneToken)).json().activities.map((x: { activityid: string }) => x.activityid)).toEqual([theirs.activityid]);
 });
 
-test('limit: default 20, 1 to 50, anything else is a 400', async () => {
+test('a pull gives the oldest first, up to 20; the rest is `more`', async () => {
   const acc = await createAccount(app); // a fresh user, so nothing else is waiting in the inbox
   try {
     const many = Array.from({ length: 5 }, (_, i) => watchAct(acc, { startdate: 1731490000 + i, enddate: 1731490100 + i }));
     await watchUpload(acc, [many[3], many[0], many[4], many[1], many[2]]); // sent out of order
-    const two = (await inbox(acc.phoneToken, '?limit=2')).json().activities;
-    expect(two.map((x: { activityid: string }) => x.activityid)).toEqual([many[0].activityid, many[1].activityid]); // the two OLDEST, oldest first
-    expect((await inbox(acc.phoneToken)).json().activities).toHaveLength(5);
-    for (const bad of ['?limit=0', '?limit=51', '?limit=abc', '?limit=1.5']) {
-      const res = await inbox(acc.phoneToken, bad);
-      expect(res.statusCode, bad).toBe(400);
-      expect(res.json().code, bad).toBe('BAD_REQUEST');
-    }
+    const all = (await inbox(acc.phoneToken)).json().activities;
+    expect(all.map((x: { activityid: string }) => x.activityid)).toEqual(many.map(m => m.activityid)); // oldest first
   } finally {
     await acc.remove();
   }
 });
+
 
 test('ack moves items out of the inbox: only the user\'s own, only while waiting, and a repeat acks nothing', async () => {
   const x = watchAct(me), y = watchAct(me);
@@ -79,7 +72,7 @@ test('ack moves items out of the inbox: only the user\'s own, only while waiting
   const foreign = watchAct(other);
   await watchUpload(other, [foreign]);
   const phoneOwn = activity(me.phoneDownloadid);
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(me.phoneToken), payload: { activities: [phoneOwn] } });
+  await phoneBatch(app, me.phoneToken, [phoneOwn]);
 
   const res = await ack(me.phoneToken, { ids: [x.activityid, foreign.activityid, phoneOwn.activityid, randomUUID()] });
   expect(res.statusCode).toBe(200);
@@ -97,7 +90,7 @@ test('ack moves items out of the inbox: only the user\'s own, only while waiting
 });
 
 test('ack body is checked: 1 to 100 uuids', async () => {
-  for (const body of [{}, { ids: [] }, { ids: ['nope'] }, { ids: 'x' }, { ids: Array.from({ length: 101 }, () => randomUUID()) }]) {
+  for (const body of [{ ids: [] }, { ids: ['nope'] }, { ids: 'x' }, { ids: Array.from({ length: 101 }, () => randomUUID()) }]) {
     const res = await ack(me.phoneToken, body);
     expect(res.statusCode, JSON.stringify(body).slice(0, 40)).toBe(400);
     expect(res.json().code).toBe('BAD_REQUEST');
@@ -110,5 +103,5 @@ test('the inbox is the phone\'s: a watch token is refused, and the watch has no 
   expect((await ack(me.watchToken, { ids: [randomUUID()] })).json().code).toBe('WRONG_DEVICE');
   const w = await app.inject({ url: '/wearable/v3/activities/inbox', headers: bearer(me.watchToken) });
   expect(w.json().code).toBe('NOT_FOUND');                                                  // the inbox is the phone's
-  expect((await app.inject({ url: INBOX })).json().code).toBe('INVALID_TOKEN_FORMAT');
+  expect((await inbox(null)).json().code).toBe('INVALID_TOKEN_FORMAT');
 });

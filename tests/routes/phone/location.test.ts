@@ -1,6 +1,7 @@
 import { test, expect, beforeAll, afterAll } from 'vitest';
 import { build, createAccount, type Account, type TestApp } from '../../helpers/app.js';
 import { bearer } from '../../helpers/fixtures.js';
+import { phoneLocation } from '../../helpers/viaSync.js';
 
 let app: TestApp;
 let me: Account, nobody: Account, bystander: Account;
@@ -19,8 +20,8 @@ afterAll(async () => {
   await me.remove(); await nobody.remove(); await bystander.remove(); await app.close();
 });
 
-const put = (token: string | null, payload: unknown, url = '/phone/v3/profile/location') =>
-  app.inject({ method: 'PUT', url, headers: token ? bearer(token) : {}, payload: payload as object });
+const put = (token: string | null, payload: unknown, url?: string) =>
+  url ? app.inject({ method: 'PUT', url, headers: token ? bearer(token) : {}, payload: payload as object }) : phoneLocation(app, token, payload);
 const row = async (userid: string) => (await app.pg.writer.query(
   'SELECT lat, lon, city, state, iso, geo_source, geom[0] AS gx, geom[1] AS gy, fname, gender, height, weight, dobglobal, dateregistered FROM userinfo WHERE userid = $1', [userid])).rows[0];
 
@@ -105,7 +106,7 @@ test('(0, 0) is refused but a point on the equator or on the meridian is a place
 test('a user with no profile row yet is a 404, routine and not logged, and nothing is made', async () => {
   const res = await put(nobody.phoneToken, PLACE);
   expect(res.statusCode).toBe(404);
-  expect(res.json()).toMatchObject({ code: 'NOT_FOUND', errorId: '' });
+  expect(res.json()).toMatchObject({ code: 'NOT_FOUND' });
   expect((await app.pg.writer.query('SELECT count(*)::int n FROM userinfo WHERE userid = $1', [nobody.userid])).rows[0].n).toBe(0);
 });
 

@@ -161,11 +161,12 @@ CREATE TABLE downloads (
     uninstall_date INTEGER,
     fcm_token TEXT,
     timezone TEXT,
+    deviceid UUID,                          -- NEW (v3, dev-db/09-downloads-device-v3.sql): the app's own device id, the same value as usertokens.deviceid once it signs in; NULL for older rows. Index idx_downloads_deviceid
     CONSTRAINT downloads_stage_check CHECK (stage >= 0 AND stage <= 9)
 );
 ```
 
-No change to the columns. Existing indexes: `downloads_pkey`, `idx_downloads_userid_ddate_desc (userid, ddate DESC)`,
+One new nullable column, `deviceid` (v3). **The install makes its own row when the app is first opened, before anyone signs in: `userid` is then empty, and the sign-in sets it.** Existing indexes: `downloads_pkey`, `idx_downloads_userid_ddate_desc (userid, ddate DESC)`,
 `idx_downloads_userid_not_null (userid) WHERE userid IS NOT NULL`, `idx_downloads_active_tokens (userid, fcm_token, timezone) WHERE ...not null`.
 Each install, phone or watch, has its own row.
 
@@ -409,9 +410,9 @@ What it holds (confirmed from a sample row and your code):
 - **`yesterday_*` are the previous day, kept so yesterday's leaderboard can be read from the database.** When a user syncs the next day, `dtgraph` and `stepcount` move on, and the finished day would survive only inside the compact arrays, which cannot be ranked without decoding every user.
   The phone sends them with each `PUT /walk/today` and the server stores them as received ([server.md](server.md) section 11). A board for a day `L` reads both places: users whose `dtgraph = L` and users whose `yesterday_dtgraph = L`. A user is in at most one of them.
 - **`dtgraph` is a calendar date, not an instant** ([README](README.md) section 5): that date at midnight UTC, a multiple of 86400, the same label for every time zone.
-  `stepcount`, `distance` (metres), `ascend` and `descend` (floors up and down) are that day's totals, "today". `ddate` is when the row was last written.
+  `stepcount`, `distance` (metres), `ascend` (floors up) is that day's total, "today"; **`descend` is not written by v3**. `ddate` is when the row was last written.
 - `max_steps` and `max_distance`, with `max_steps_date` and `max_distance_date` (date labels), are the personal records.
-- **The `*_json` columns have one entry per day with data, oldest to newest:** `stepcount_json`, `distance_json` (metres), `ascend_json`, `descend_json`. Their last entry equals today's value.
+- **The `*_json` columns have one entry per day with data, oldest to newest:** `stepcount_json`, `distance_json` (metres), `ascend_json`. **`descend_json` is not written by v3** (the column stays; floors down are kept for today only). With `history_base` set the arrays are completed days only.
 - **`dtgraph_json` holds the dates as day deltas against today's `dtgraph`** (`encodeDeltas` / `decodeDeltas`): element `i` is the number of days from day `i` to day `i + 1`, and the last element is the number of days from the last entry to
   today's `dtgraph`. So it ends in `0` when the last entry is today, and a number above 1 is a gap (a run of days with no data). The first entry's date is not stored; decoding walks back from today.
 - **`iso_json` is run-length encoded, one country per day** (`rleEncode` / `rleDecode`): `[["IN",328],["TR",15],["IN",53]]` means 328 days in India, then 15 in Turkey, then 53 in India. Decoded, it lines up with the other arrays, and

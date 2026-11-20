@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneDelete } from '../helpers/viaSync.js';
 
 // S3 is a fake here (an in-memory bucket): the tests check what the server decides, not what S3 does. The signing itself is real and offline.
 const fake = vi.hoisted(() => ({ files: new Map<string, { size: number; contentType: string }>(), failDelete: false }));
@@ -24,7 +25,7 @@ beforeAll(async () => {
   owner = await createAccount(app); other = await createAccount(app);
   const a = activity(owner.phoneDownloadid);
   act = a.activityid;
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(owner.phoneToken), payload: { activities: [a] } });
+  await phoneBatch(app, owner.phoneToken, [a]);
 });
 afterAll(async () => { await owner.remove(); await other.remove(); await app.close(); });
 beforeEach(async () => {
@@ -239,13 +240,13 @@ test('remove: when S3 is down the list is still changed (an orphan file, never a
 test('deleting an activity deletes all its files in S3, and still succeeds when S3 is down', async () => {
   const v = name(); upload(v); upload('old.webp'); upload('x.webp', 10, 'image/webp', randomUUID()); // another activity's file
   await commit({ value: v, type: 'photo', dimension: [1, 1] });
-  expect((await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${act}`, headers: bearer(owner.phoneToken) })).statusCode).toBe(204);
+  expect((await phoneDelete(app, owner.phoneToken, act)).statusCode).toBe(204);
   expect([...fake.files.keys()].filter((k) => k.startsWith(`${act}/`))).toEqual([]);
   expect(fake.files.size).toBe(1); // the other activity's file is untouched
 
   upload('again.webp'); fake.failDelete = true;
-  expect((await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${act}`, headers: bearer(owner.phoneToken) })).statusCode).toBe(204); // a repeat with S3 down
+  expect((await phoneDelete(app, owner.phoneToken, act)).statusCode).toBe(204); // a repeat with S3 down
   fake.failDelete = false;
-  expect((await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${act}`, headers: bearer(owner.phoneToken) })).statusCode).toBe(204); // a repeat tries again
+  expect((await phoneDelete(app, owner.phoneToken, act)).statusCode).toBe(204); // a repeat tries again
   expect(fake.files.has(`${act}/again.webp`)).toBe(false);
 });

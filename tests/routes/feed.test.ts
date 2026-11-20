@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneDelete } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let a: Account, b: Account, hidden: Account, noProfile: Account;
@@ -13,7 +14,7 @@ const addProfile = (acc: Account, over: { gmt?: number; hide?: boolean; fname?: 
     [acc.userid, over.fname ?? 'Asha', over.gmt ?? 0, over.hide ?? false, over.iso ?? 'IN'],
   );
 const post = (acc: Account, items: ReturnType<typeof activity>[]) =>
-  app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(acc.phoneToken), payload: { activities: items } });
+  phoneBatch(app, acc.phoneToken, items);
 const feed = async (token = a.phoneToken) => {
   const res = await app.inject({ url: '/phone/v3/feed', headers: bearer(token) });
   expect(res.statusCode).toBe(200);
@@ -76,7 +77,7 @@ test('hidden profiles and users without a profile are not in the feed', async ()
 
 test('a deleted activity leaves the feed', async () => {
   const before = (await mine()).filter((p) => p.author.userid === a.userid);
-  const del = await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${before[0].activity.activityid}`, headers: bearer(a.phoneToken) });
+  const del = await phoneDelete(app, a.phoneToken, before[0].activity.activityid);
   expect(del.statusCode).toBeLessThan(300);
   const after = (await mine()).filter((p) => p.author.userid === a.userid);
   expect(after.map((p) => p.activity.activityid)).toEqual([before[1].activity.activityid]);
@@ -167,7 +168,7 @@ test('one activity: the owner can always read their own; a hidden profile\'s is 
   expect((await one(mineAct.activityid, b.phoneToken)).statusCode).toBe(404);             // someone else: the profile is hidden
   const gone = activity(a.phoneDownloadid, { startdate: T + 90000, enddate: T + 91000 });
   await post(a, [gone]);
-  await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${gone.activityid}`, headers: bearer(a.phoneToken) });
+  await phoneDelete(app, a.phoneToken, gone.activityid);
   expect((await one(gone.activityid)).statusCode).toBe(404);
   expect((await one(randomUUID())).statusCode).toBe(404);
   expect((await one('not-a-uuid')).statusCode).toBe(400);

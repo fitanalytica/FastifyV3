@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
 import { build } from '../helpers/app.js';
+import { probe } from '../helpers/viaSync.js';
 
 test('a client error is logged to apperrors and the reply carries the errorid', async () => {
   const app = await build();
@@ -17,7 +18,7 @@ test('a client error is logged to apperrors and the reply carries the errorid', 
 test('routine codes (TOKEN_EXPIRED, LOGOUT, NOT_FOUND) are not logged', async () => {
   const app = await build();
   const before = await app.pg.writer.query('SELECT count(*)::int n FROM apperrors');
-  const res = await app.inject({ url: '/phone/v3/me', headers: { authorization: 'Bearer a.b.c' } });
+  const res = await probe(app, 'a.b.c');
   expect(res.json()).toMatchObject({ code: 'LOGOUT', errorId: '' });
   const after = await app.pg.writer.query('SELECT count(*)::int n FROM apperrors');
   expect(after.rows[0].n).toBe(before.rows[0].n);

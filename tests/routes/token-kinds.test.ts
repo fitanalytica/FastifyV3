@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { loginDevice } from '../../src/services/auth/loginDevice.js';
 import { PHONE_BATCH, WEARABLE_BATCH, activity, activityRow, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, probe, probeWatch, whoami } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let acc: Account;
@@ -14,13 +15,13 @@ const get = (url: string, token: string) => app.inject({ url, headers: bearer(to
 
 test('phone and wearable routes each accept only their own kind of token', async () => {
   const a = activity(acc.phoneDownloadid);
-  expect((await post(PHONE_BATCH, acc.watchToken, { activities: [a] })).json()).toMatchObject({ statusCode: 403, code: 'WRONG_DEVICE' });
+  expect((await phoneBatch(app, acc.watchToken, [a])).json()).toMatchObject({ statusCode: 403, code: 'WRONG_DEVICE' });
   expect((await post(WEARABLE_BATCH, acc.phoneToken, { activities: [a] })).json()).toMatchObject({ statusCode: 403, code: 'WRONG_DEVICE' });
   expect(await activityRow(app, a.activityid)).toBeUndefined();
 
-  expect((await get('/phone/v3/me', acc.phoneToken)).json()).toMatchObject({ userid: acc.userid, deviceType: 'phone' });
-  expect((await get('/wearable/v3/me', acc.watchToken)).json()).toMatchObject({ userid: acc.userid, deviceType: 'watch' });
-  expect((await get('/wearable/v3/me', acc.phoneToken)).json().code).toBe('WRONG_DEVICE');
+  expect(await whoami(app, acc.phoneToken)).toEqual({ userid: acc.userid, deviceType: 'phone' });
+  expect((await probeWatch(app, acc.watchToken)).statusCode).toBe(200);
+  expect((await probeWatch(app, acc.phoneToken)).json().code).toBe('WRONG_DEVICE');
   expect((await post('/phone/v3/auth/logout', acc.watchToken)).json().code).toBe('WRONG_DEVICE');
 });
 
@@ -28,7 +29,7 @@ test('refresh works on both sides, with the matching refresh token', async () =>
   const mine = await acc.login(acc.watchDownloadid);
   const r = await app.inject({ method: 'POST', url: '/wearable/v3/auth/refresh', payload: { refreshToken: mine.refreshToken } });
   expect(r.statusCode).toBe(200);
-  expect((await get('/wearable/v3/me', r.json().accessToken)).json().deviceType).toBe('watch');
+  expect((await probeWatch(app, r.json().accessToken)).statusCode).toBe(200);
 });
 
 test('there are no unprefixed or unversioned paths', async () => {
@@ -46,16 +47,16 @@ test('v3 serves the phone and the watch only: a tablet is the phone side, chrome
   };
   try {
     const tablet = await device('tablet');
-    expect((await get('/phone/v3/me', tablet.token)).json()).toMatchObject({ userid: acc.userid, deviceType: 'tablet' });
-    expect((await get('/wearable/v3/me', tablet.token)).json().code).toBe('WRONG_DEVICE');
+    expect(await whoami(app, tablet.token)).toEqual({ userid: acc.userid, deviceType: 'tablet' });
+    expect((await probeWatch(app, tablet.token)).json().code).toBe('WRONG_DEVICE');
     for (const type of ['chrome', 'mac', null]) {
       const d = await device(type);
-      for (const url of ['/phone/v3/me', '/wearable/v3/me']) {
-        const res = await get(url, d.token);
+      for (const [url, call] of [['phone', () => probe(app, d.token)], ['wearable', () => probeWatch(app, d.token)]] as const) {
+        const res = await call();
         expect(res.statusCode, `${type} ${url}`).toBe(403);
         expect(res.json().code).toBe('WRONG_DEVICE');
       }
-      expect((await post(PHONE_BATCH, d.token, { activities: [activity(d.downloadid)] })).json().code).toBe('WRONG_DEVICE');
+      expect((await phoneBatch(app, d.token, [activity(d.downloadid)])).json().code).toBe('WRONG_DEVICE');
     }
   } finally {
     await app.pg.writer.query(`DELETE FROM usertokens WHERE userid = $1 AND downloadid NOT IN ($2, $3)`, [acc.userid, acc.phoneDownloadid, acc.watchDownloadid]);

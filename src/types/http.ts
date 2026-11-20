@@ -1,15 +1,17 @@
 import type { Static } from '@sinclair/typebox';
-import type { RedeemBodySchema, PurchaseIosBodySchema, AppStoreNotificationBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
-import type { AckBodySchema, ActivityIdParamsSchema, BatchBodySchema, DevLoginBodySchema, FeedQuerySchema, CommitBodySchema, InboxQuerySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, LogoutBodySchema, MediaParamsSchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema, WearableRestoreQuerySchema, LocationBodySchema } from '../schemas/index.js';
+import type { RedeemBodySchema, PurchaseIosBodySchema, AppStoreNotificationBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
+import type { WalkHistoryBodySchema, WalkTodayBodySchema } from '../schemas/index.js';
+import type { DeviceInfoSchema, InstallBodySchema, WatchTokenBodySchema } from '../schemas/index.js';
+import type { ActivityIdParamsSchema, BatchBodySchema, DevLoginBodySchema, FeedQuerySchema, CommitBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, LogoutBodySchema, MediaParamsSchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema, WearableRestoreQuerySchema, LocationBodySchema } from '../schemas/index.js';
 
 // Request bodies, queries and params come from the schemas (src/schemas): one definition for the check and the type.
+export type WalkTodayBody = Static<typeof WalkTodayBodySchema>;
+export type WalkHistoryBody = Static<typeof WalkHistoryBodySchema>;
 export type RefreshBody = Static<typeof RefreshBodySchema>;
 export type LogoutBody = Static<typeof LogoutBodySchema>;
 export type DevLoginBody = Static<typeof DevLoginBodySchema>;
 export type BatchBody = Static<typeof BatchBodySchema>;
 export type ActivityIdParams = Static<typeof ActivityIdParamsSchema>;
-export type InboxQuery = Static<typeof InboxQuerySchema>;
-export type AckBody = Static<typeof AckBodySchema>;
 export type LocationBody = Static<typeof LocationBodySchema>;
 export type RestoreQuery = Static<typeof RestoreQuerySchema>;
 export type PresignBody = Static<typeof PresignBodySchema>;
@@ -66,7 +68,9 @@ export interface LocationResponse {
 export type WeatherBody = Static<typeof WeatherBodySchema>;
 export type UserIdParams = Static<typeof UserIdParamsSchema>;
 export type UserFeedQuery = Static<typeof UserFeedQuerySchema>;
-export type VisibilityBody = Static<typeof VisibilityBodySchema>;
 export type ProfileBody = Static<typeof ProfileBodySchema>;
 export type LoginBody = Static<typeof LoginBodySchema>;
+export type DeviceInfo = Static<typeof DeviceInfoSchema>;
+export type InstallBody = Static<typeof InstallBodySchema>;
+export type WatchTokenBody = Static<typeof WatchTokenBodySchema>;
 export type DeleteCodeBody = Static<typeof DeleteCodeBodySchema>;

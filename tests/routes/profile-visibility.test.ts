@@ -1,13 +1,14 @@
 import { test, expect, beforeAll, afterAll } from 'vitest';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneVisibility } from '../helpers/viaSync.js';
 
 // Public or private (docs/data/api.md section 7c): a private user is out of the feed and out of other people's reach, and back when public again.
 let app: TestApp;
 let a: Account, b: Account, noProfile: Account;
 const T = 1990000000;
 
-const put = (hidden: unknown, token = a.phoneToken) => app.inject({ method: 'PUT', url: '/phone/v3/profile/visibility', headers: bearer(token), payload: { hidden } as object });
+const put = (hidden: unknown, token = a.phoneToken) => phoneVisibility(app, token, hidden);
 const inFeed = async () => ((await app.inject({ url: '/phone/v3/feed', headers: bearer(b.phoneToken) })).json().posts as { author: { userid: string } }[]).some((p) => p.author.userid === a.userid);
 const stored = async () => (await app.pg.writer.query('SELECT hideprofile FROM userinfo WHERE userid = $1', [a.userid])).rows[0].hideprofile;
 
@@ -17,7 +18,7 @@ beforeAll(async () => {
   for (const x of [a, b]) {
     await app.pg.writer.query(`INSERT INTO userinfo (userid, fname, lname, weight, seconds_from_gmt, hideprofile, city, state, iso, dateregistered) VALUES ($1, 'Pat', 'Test', 68, 0, false, 'Pune', 'MH', 'IN', 1700000000)`, [x.userid]);
   }
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(a.phoneToken), payload: { activities: [activity(a.phoneDownloadid, { startdate: T, enddate: T + 60 })] } });
+  await phoneBatch(app, a.phoneToken, [activity(a.phoneDownloadid, { startdate: T, enddate: T + 60 })]);
 });
 afterAll(async () => {
   for (const x of [a, b, noProfile]) await x.remove();
@@ -49,5 +50,5 @@ test('no profile row yet is a 404 (the phone sends it again after the profile); 
   expect(res.statusCode).toBe(404);
   expect(res.json().code).toBe('NOT_FOUND');
   expect((await put('yes')).statusCode).toBe(400);
-  expect((await app.inject({ method: 'PUT', url: '/phone/v3/profile/visibility', headers: bearer(a.phoneToken), payload: {} })).statusCode).toBe(400);
+  expect((await put(undefined)).statusCode).toBe(400);
 });

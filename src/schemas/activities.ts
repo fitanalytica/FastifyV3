@@ -7,12 +7,6 @@ export const BatchBodySchema = Type.Object({ activities: Type.Array(Type.Unknown
 
 export const ActivityIdParamsSchema = Type.Object({ activityid: Uuid });
 
-export const InboxQuerySchema = Type.Object({
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 })),
-});
-
-export const AckBodySchema = Type.Object({ ids: Type.Array(Uuid, { minItems: 1, maxItems: 100 }) });
-
 /** `<startdate>.<activityid>`: where the previous page stopped. */
 const Cursor = Type.String({ pattern: '^[0-9]{1,10}\\.[0-9a-fA-F-]{36}$' });
 

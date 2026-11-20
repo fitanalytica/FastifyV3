@@ -85,11 +85,11 @@ Lists and feeds select the summary columns only, and add `WHERE delete_pending =
 
 ### `steps_daily`
 
-One row per day with data. The day is the date label of [format.md](format.md) section 5 (midnight UTC of the local date).
+One row per day with data. The day is the date label of [format.md](format.md) section 5 (midnight UTC of the local date). **The key is named `dtgraph`** (migration `010_steps_dtgraph`; it was `day` in migration 009), the same name and meaning as on the watch ([watch.md](watch.md) section 7).
 
 ```sql
 CREATE TABLE steps_daily (
-  day INTEGER PRIMARY KEY,           -- a dtgraph: the local date as midnight UTC, a multiple of 86400 (README section 5)
+  dtgraph INTEGER PRIMARY KEY,       -- (was `day`, migration 010) a dtgraph: the local date as midnight UTC, a multiple of 86400 (README section 5)
   steps INTEGER NOT NULL DEFAULT 0,
   distance REAL NOT NULL DEFAULT 0,  -- metres
   ascend INTEGER NOT NULL DEFAULT 0, -- floors up
@@ -98,10 +98,12 @@ CREATE TABLE steps_daily (
   synced INTEGER NOT NULL DEFAULT 0, -- 1 = the history arrays on the server include this day as it is now
   CHECK (synced IN (0, 1))
 );
-CREATE INDEX steps_daily_unsynced ON steps_daily (day) WHERE synced = 0;
+CREATE INDEX steps_daily_unsynced ON steps_daily (dtgraph) WHERE synced = 0;
 ```
 
 Today's row is not part of the history until the day closes; its flag is `walk_today_synced` (section 2).
+
+Created by migration `009_steps_daily`. Code: `src/data/db/stepsDaily.ts`. **Written by two sources** ([phone.md](phone.md) section 11): the **pedometer** (today only, live) and **Apple Health** (yesterday and before). `upsertSql` adds a day, or, for a day that is there, **keeps, for each of steps, distance, `ascend` and `descend` (when the source gives it: the pedometer and the watch do, Health does not), the higher of what it has and what comes in** (`MAX` per column); a lower or equal number changes nothing. **`iso`** is the country the phone was in (2 letters, upper case; looked up before the write): set when the day has none; **today's row takes the latest** (the phone may have travelled); a closed day keeps the one it has; a day with no known country stays `NULL` and is left out of the world map. `synced` goes back to 0 when the numbers or the country changed, else the flag stays. Cleared when another account signs in (`clearLocalAccount`).
 
 ### `media_files`
 

@@ -13,6 +13,7 @@ vi.mock('../../src/services/auth/providers/keys.js', async () => {
 });
 
 import { appleClientSecret, exchangeAppleCode, revokeAppleToken } from '../../src/services/auth/providers/apple.js';
+import { probe } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let signing: CryptoKey;
@@ -79,7 +80,7 @@ test('Google: the user is made from the token, signed in on this device, and the
   const body = res.json();
   expect(body).toMatchObject({ email: 'asha@example.com', givenName: 'Asha', familyName: 'Rao' });
   expect(await rows(sub)).toMatchObject([{ userid: body.userid, loginused: 'google', email: 'asha@example.com', applegoogleid: sub }]);
-  expect((await app.inject({ url: '/phone/v3/me', headers: bearer(body.accessToken) })).statusCode).toBe(200);
+  expect((await probe(app, body.accessToken)).statusCode).toBe(200);
 });
 
 test('the same person again is the same user (on another device too); the id the app says is never trusted', async () => {

@@ -7,3 +7,5 @@ export * from './weather.js';
 export * from './users.js';
 export * from './account.js';
 export * from './store.js';
+export * from './walk.js';
+export * from './sync.js';

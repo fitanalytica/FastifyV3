@@ -116,7 +116,7 @@ One row per user. It keeps today's totals in plain columns and the history in co
 
 **A day** is a `dtgraph`: a calendar date written as that date at midnight UTC, so it is a multiple of 86400 and the same label in every time zone (defined in [README](README.md) section 5).
 
-**Plain columns, always today** (or the latest day with data): `dtgraph` (the day), `stepcount`, `distance` (metres), `ascend` and `descend` (floors up and down), the records `max_steps`, `max_steps_date`,
+**Plain columns, always today** (or the latest day with data): `dtgraph` (the day), `stepcount`, `distance` (metres), `ascend` (floors up; **floors down are not sent or kept by v3**), the records `max_steps`, `max_steps_date`,
 `max_distance`, `max_distance_date`, and `steps_goal` (default 10000), and the previous day for yesterday's leaderboard: `yesterday_dtgraph` (always `dtgraph - 86400`), `yesterday_stepcount`, `yesterday_distance`, sent by the phone and stored as received.
 
 **History arrays, completed days only**, oldest to newest, one entry per day that has data:
@@ -125,14 +125,14 @@ One row per user. It keeps today's totals in plain columns and the history in co
 |---|---|
 | `stepcount_json` | steps that day |
 | `distance_json` | metres that day |
-| `ascend_json`, `descend_json` | floors up, floors down |
+| `ascend_json` | floors up (**there is no `descend_json`**: floors down are kept for today only, in the plain `descend` column; no coordinates either) |
 | `dtgraph_json` | the days, as deltas (below) |
 | `iso_json` | the country of each day, run-length encoded (below) |
 | `history_base` (new column) | the day the deltas were encoded against |
 
 **`dtgraph_json`** (`encodeDeltas`, `decodeDeltas`): element `i` is the number of days from day `i` to day `i + 1`, and the last element is the number of days from the last day to `history_base`. A number above 1 is a
 gap of days with no data. Decoding starts from `history_base` and walks back.
-**`iso_json`** (`rleEncode`, `rleDecode`): `[["IN",328],["TR",15],["IN",53]]` is 328 days in India, then 15 in Turkey, then 53 in India. Decoded, it has one country per entry of the other arrays.
+**`iso_json`** (`rleEncode`, `rleDecode`): `[["IN",328],["TR",15],["IN",53]]` is 328 days in India, then 15 in Turkey, then 53 in India. A day whose country the phone does not know is sent with the phone's **current** country (the phone's table keeps it empty); `ZZ` only when the phone has no country at all (the world map leaves `ZZ` out). Decoded, it has one country per entry of the other arrays.
 **The world map** is the sum of the steps per country after decoding. The phone computes it from its own table; the server never does.
 
 **Which form a row is in.** A row with `history_base` set is the new form: the arrays hold **completed days only**, and today comes from the plain columns. A row with `history_base` empty is the old form: the arrays include today

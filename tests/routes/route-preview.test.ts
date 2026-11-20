@@ -1,13 +1,14 @@
 import { test, expect, beforeAll, afterAll } from 'vitest';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let me: Account;
 beforeAll(async () => { app = await build(); me = await createAccount(app); });
 afterAll(async () => { await me.remove(); await app.close(); });
 
-const send = async (items: object[]) => (await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(me.phoneToken), payload: { activities: items } })).json().results;
+const send = async (items: object[]) => (await phoneBatch(app, me.phoneToken, items)).json().results;
 const stored = async (id: string) => (await app.pg.writer.query('SELECT route_preview FROM activities WHERE activityid = $1', [id])).rows[0].route_preview;
 const PREVIEW = { p: [1297160, 7759457, 12, -4, 3, 1] };
 

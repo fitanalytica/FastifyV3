@@ -15,8 +15,8 @@ test('a body that does not match its schema is a 400 BAD_REQUEST that names the 
     ['/phone/v3/auth/refresh', {}, undefined, 'refreshToken'],
     ['/phone/v3/auth/refresh', { refreshToken: '' }, undefined, 'refreshToken'],
     ['/phone/v3/auth/logout', { refreshToken: '' }, acc.phoneToken, 'refreshToken'],
-    ['/phone/v3/activities/batch', {}, acc.phoneToken, 'activities'],
-    ['/phone/v3/activities/ack', { ids: ['x'] }, acc.phoneToken, 'ids'],
+    ['/wearable/v3/activities/batch', {}, acc.watchToken, 'activities'],
+    ['/phone/v3/sync', { up: [1] }, acc.phoneToken, 'up'],
     ['/phone/v3/auth/dev-login', { deviceid: 'nope' }, undefined, 'deviceid'],
     ['/wearable/v3/auth/refresh', {}, undefined, 'refreshToken'],
   ];
@@ -29,13 +29,13 @@ test('a body that does not match its schema is a 400 BAD_REQUEST that names the 
 });
 
 test('a lone value is never wrapped into a list (Fastify\'s default coercion would)', async () => {
-  const res = await post('/phone/v3/activities/batch', { activities: 'x' }, acc.phoneToken);
+  const res = await post('/wearable/v3/activities/batch', { activities: 'x' }, acc.watchToken);
   expect(res.statusCode).toBe(400);
   expect(res.json().code).toBe('BAD_REQUEST');
 });
 
 test('the batch rules stay the service\'s: an empty list or more than 20 is BAD_BATCH', async () => {
-  expect((await post('/phone/v3/activities/batch', { activities: [] }, acc.phoneToken)).json().code).toBe('BAD_BATCH');
+  expect((await post('/wearable/v3/activities/batch', { activities: [] }, acc.watchToken)).json().code).toBe('BAD_BATCH');
 });
 
 test('extra fields are tolerated (an app a version ahead must not break)', async () => {
@@ -45,6 +45,6 @@ test('extra fields are tolerated (an app a version ahead must not break)', async
 });
 
 test('auth is checked before the body: a bad token with a bad body is the token error', async () => {
-  const res = await post('/phone/v3/activities/batch', {}, 'a.b.c');
+  const res = await post('/wearable/v3/activities/batch', {}, 'a.b.c');
   expect(res.json().code).toBe('LOGOUT');
 });

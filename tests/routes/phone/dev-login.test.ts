@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, type TestApp } from '../../helpers/app.js';
 import { bearer } from '../../helpers/fixtures.js';
+import { probeWatch, whoami } from '../../helpers/viaSync.js';
 
 let app: TestApp;
 beforeAll(async () => { app = await build(); });
@@ -12,8 +13,7 @@ test('dev-login signs in a usable token (and /me says who it is)', async () => {
   const res = await app.inject({ method: 'POST', url: '/phone/v3/auth/dev-login', payload: { deviceid } });
   expect(res.statusCode).toBe(200);
   const { accessToken, userid } = res.json();
-  const me = await app.inject({ url: '/phone/v3/me', headers: bearer(accessToken) });
-  expect(me.json()).toMatchObject({ userid, deviceType: 'phone' });
+  expect(await whoami(app, accessToken)).toEqual({ userid, deviceType: 'phone' });
   expect((await app.inject({ method: 'POST', url: '/phone/v3/auth/dev-login', payload: {} })).statusCode).toBe(400);
   await app.pg.writer.query('DELETE FROM usertokens WHERE deviceid = $1', [deviceid]);
 });
@@ -29,8 +29,8 @@ test('dev-login can make a watch device: device_type watch and platform watchos 
     const { downloadid, accessToken } = res.json();
     const row = await app.pg.writer.query('SELECT device_type::text AS t, platform::text AS p FROM downloads WHERE downloadid = $1', [downloadid]);
     expect(row.rows[0]).toEqual({ t: type, p: platform });
-    const path = type === 'watch' ? '/wearable/v3/me' : '/phone/v3/me';
-    expect((await app.inject({ url: path, headers: bearer(accessToken) })).json().deviceType).toBe(type);
+    if (type === 'watch') expect((await probeWatch(app, accessToken)).statusCode).toBe(200);
+    else expect(await whoami(app, accessToken)).toMatchObject({ deviceType: type });
     await app.pg.writer.query('DELETE FROM usertokens WHERE deviceid = $1', [deviceid]);
     await app.pg.writer.query('DELETE FROM downloads WHERE downloadid = $1', [downloadid]);
   }
@@ -46,7 +46,7 @@ test('provider: signs in as the user mapped in the env, and falls back to the de
     const a = await app.inject({ method: 'POST', url: '/phone/v3/auth/dev-login', payload: { deviceid: randomUUID(), provider: 'apple' } });
     expect(a.json().userid).toBe(acc.userid);
     ids.push(a.json().downloadid);
-    expect((await app.inject({ url: '/phone/v3/me', headers: bearer(a.json().accessToken) })).json().userid).toBe(acc.userid);
+    expect(((await whoami(app, a.json().accessToken)) as { userid: string }).userid).toBe(acc.userid);
 
     // the same install (downloadid) signs in again as the same user, and no new downloads row is made
     const again = await app.inject({ method: 'POST', url: '/phone/v3/auth/dev-login', payload: { deviceid: randomUUID(), downloadid: a.json().downloadid, provider: 'apple' } });
@@ -83,7 +83,7 @@ test('userid: signs in as exactly that user, wins over the provider mapping, and
     expect(a.statusCode).toBe(200);
     expect(a.json().userid).toBe(acc.userid);              // ... but the userid asked for wins
     ids.push(a.json().downloadid);
-    expect((await app.inject({ url: '/phone/v3/me', headers: bearer(a.json().accessToken) })).json().userid).toBe(acc.userid);
+    expect(((await whoami(app, a.json().accessToken)) as { userid: string }).userid).toBe(acc.userid);
 
     const unknown = await app.inject({ method: 'POST', url: '/phone/v3/auth/dev-login', payload: { deviceid: randomUUID(), userid: randomUUID() } });
     expect(unknown.statusCode).toBe(400);

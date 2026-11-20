@@ -26,9 +26,6 @@ export const ProfileKindParamsSchema = Type.Object({ kind: Kind });
 /** GET /phone/v3/profilepic/:userid/:value and /profilebg/:userid/:value. */
 export const ProfileImageParamsSchema = Type.Object({ userid: Type.String({ format: 'uuid' }), value: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$' }) });
 
-/** PUT /phone/v3/profile/visibility: `hidden` true keeps the user's activities and posts out of the feed and other people's view (`hideprofile`). */
-export const VisibilityBodySchema = Type.Object({ hidden: Type.Boolean() });
-
 /**
  * PUT /phone/v3/profile: the fields the user edits, any of them (at least one). A field sent as `null` is cleared (Null comes first in each union: the server's coercion would turn a null into 0 or an empty text otherwise) (`fname` cannot be). `dobglobal` is the birth
  * date as midnight UTC in epoch seconds, `height` is in cm and `weight` in kg. The profile row is made on the first call (docs/data/api.md section 7).

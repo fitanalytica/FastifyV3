@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, probe } from '../helpers/viaSync.js';
 
 // Deleting an account (docs/data/api.md section 8b): the e-mailed code, then every row and every file of the user. S3, e-mail and Apple are stand-ins.
 const fake = vi.hoisted(() => ({
@@ -60,7 +61,7 @@ async function user(over: { email?: string | null; profilepic?: string | null } 
     [acc.userid, over.profilepic === undefined ? 'pic.webp' : over.profilepic],
   );
   const acts = [activity(acc.phoneDownloadid, { startdate: 1_960_000_000, enddate: 1_960_000_100 }), activity(acc.phoneDownloadid, { startdate: 1_960_001_000, enddate: 1_960_001_100 })];
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(acc.phoneToken), payload: { activities: acts } });
+  await phoneBatch(app, acc.phoneToken, acts);
   const postid = randomUUID();
   await app.inject({ method: 'PUT', url: `/phone/v3/posts/${postid}`, headers: bearer(acc.phoneToken), payload: { posted_at: 1_960_002_000, content: { v: 1, title: 'Hello' } } });
   await w().query('UPDATE usertokens SET apple_refresh_token = $2 WHERE userid = $1 AND device = $3', [acc.userid, `apple-${acc.userid.slice(0, 8)}`, 'test']);
@@ -152,11 +153,11 @@ test('deleting: every row, every file and every Apple grant of the user go; ever
   expect(fake.profileFiles.sort()).toEqual(['cover.webp', 'pic.webp']);
   expect(fake.revoked).toEqual([`apple-${acc.userid.slice(0, 8)}`]);
   // every device is out
-  expect((await app.inject({ url: '/phone/v3/me', headers: bearer(acc.phoneToken) })).statusCode).toBeGreaterThanOrEqual(401);
-  expect((await app.inject({ url: '/phone/v3/me', headers: bearer(acc.watchToken) })).statusCode).toBeGreaterThanOrEqual(401);
+  expect((await probe(app, acc.phoneToken)).statusCode).toBeGreaterThanOrEqual(401);
+  expect((await probe(app, acc.watchToken)).statusCode).toBeGreaterThanOrEqual(401);
   // someone else is still there
   expect(await count('SELECT count(*) AS n FROM userinfo WHERE userid = $1', other.userid)).toBe(1);
-  expect((await app.inject({ url: '/phone/v3/me', headers: bearer(other.phoneToken) })).statusCode).toBe(200);
+  expect((await probe(app, other.phoneToken)).statusCode).toBe(200);
 });
 
 test('a picture that is a provider\'s https address (the old app) is not treated as a file', async () => {
@@ -177,7 +178,7 @@ test('S3 does not answer: the request fails, NOTHING else is deleted, the user c
   expect(await count('SELECT count(*) AS n FROM userlogin WHERE userid = $1', acc.userid)).toBe(1);
   expect(await count('SELECT count(*) AS n FROM activities WHERE userid = $1', acc.userid)).toBe(2);
   expect(await count('SELECT count(*) AS n FROM userinfo WHERE userid = $1 AND deleted_date IS NOT NULL AND hideprofile', acc.userid)).toBe(1);
-  expect((await app.inject({ url: '/phone/v3/me', headers: bearer(acc.phoneToken) })).statusCode).toBe(200);
+  expect((await probe(app, acc.phoneToken)).statusCode).toBe(200);
   expect(fake.revoked).toEqual([]); // Apple is told only once the files are gone
   fake.failFolders = false;
   expect((await remove(acc, code)).statusCode).toBe(204);

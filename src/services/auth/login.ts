@@ -13,7 +13,7 @@ import { verifyIdToken } from './providers/verify.js';
 /** `userlogin.email` is 60 characters: a longer address is left out rather than cut (a cut address is a wrong address). */
 const emailFor = (email: string | null) => (email && email.length <= 60 ? email : null);
 
-export async function login(app: FastifyInstance, b: LoginBody): Promise<LoginResponse> {
+export async function login(app: FastifyInstance, b: LoginBody, ip?: string): Promise<LoginResponse> {
   const identity = await verifyIdToken(b.provider, b.idToken, b.nonce);
   const w = app.pg.writer;
   const user = await w.query(
@@ -24,7 +24,7 @@ export async function login(app: FastifyInstance, b: LoginBody): Promise<LoginRe
   );
   const userid = user.rows[0].userid as string;
   const downloadid = b.downloadid ?? randomUUID();
-  await registerDownload(app, { downloadid, userid, platform: b.platform });
+  await registerDownload(app, { downloadid, userid, deviceid: b.deviceid, platform: b.platform, info: b.deviceInfo, ip });
   const tokens = await loginDevice(app, { deviceid: b.deviceid, userid, downloadid, applegoogleid: identity.sub, device: b.device ?? 'phone' });
   // Apple: the refresh token that deleting the account must revoke. A failure is not a failed sign-in (the user is in); it is only logged.
   if (b.provider === 'apple' && b.authCode) {

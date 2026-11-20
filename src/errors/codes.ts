@@ -41,6 +41,14 @@ export const ErrorCode = {
   ALREADY_PRO: 'ALREADY_PRO',
   /** The shared membership has already ended. */
   CODE_EXPIRED: 'CODE_EXPIRED',
+  /** `PUT /walk/today`: `dtgraph` is not a day label, or is more than a day from the server's date (docs/data/api.md section 10). */
+  BAD_DTGRAPH: 'BAD_DTGRAPH',
+  /** `PUT /walk/today`: `yesterday` is not exactly the day before `dtgraph`. */
+  BAD_YESTERDAY: 'BAD_YESTERDAY',
+  /** `PUT /walk/history`: the arrays do not line up, or `base` is not a day label. */
+  BAD_HISTORY: 'BAD_HISTORY',
+  /** `POST /sync`: a section in `up` the server does not have (docs/data/sync.md). */
+  UNKNOWN_SECTION: 'UNKNOWN_SECTION',
   /** An error with no specific code. */
   UNHANDLED: 'UNHANDLED',
 } as const;

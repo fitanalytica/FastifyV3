@@ -26,8 +26,8 @@ export async function registerPlugins(app: FastifyInstance) {
   // Added BEFORE the rate limiter registers: it reads each route's `config.rateLimit` as the route is added, so the hook must have set it by then.
   // (A GET route is also registered as HEAD, so `method` can be a list.)
   app.addHook('onRoute', (route) => {
-    // Signing in is open to anyone, so it is limited more than the rest (per address): LOGIN_RATE_LIMIT a minute, 20 by default. Read at each request.
-    if ([route.method].flat().includes('POST') && /\/auth\/login$/.test(route.url)) {
+    // Signing in, and the install's first call, are open to anyone, so it is limited more than the rest (per address): LOGIN_RATE_LIMIT a minute, 20 by default. Read at each request.
+    if ([route.method].flat().includes('POST') && /\/(auth\/login|download)$/.test(route.url)) {
       route.config = { ...route.config, rateLimit: { max: () => env().loginRateLimit, timeWindow: '1 minute' } };
     }
     if ([route.method].flat().includes('POST') && /\/redeem$/.test(route.url)) {

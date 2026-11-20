@@ -6,6 +6,7 @@ import { setAppleVerifier } from '../../src/services/store/apple/current.js';
 import { setExchangeFetcher } from '../../src/services/store/exchangeRate.js';
 import { grantPurchase } from '../../src/services/store/grantPurchase.js';
 import type { AppleVerifier, StoreNotification, StoreTransaction } from '../../src/services/store/types.js';
+import { phoneState } from '../helpers/viaSync.js';
 
 // A purchase made on the phone, and the App Store's notification of it (docs/data/api.md section 15). Nothing here can be signed by Apple's keys, so the checker is replaced by one that
 // reads a made-up signed value; the real checker is tried only where it must refuse (a value it cannot check). What is tested is what the server does with a purchase it believes.
@@ -127,7 +128,7 @@ describe('the phone reports a purchase', () => {
     expect(await rows('SELECT count(*)::int AS n FROM payments_sandbox WHERE transaction_id = ANY($1::bigint[])', [[t.transactionId, t2.transactionId]])).toEqual([{ n: 2 }]);
     expect(await rows('SELECT count(*)::int AS n FROM membership_sandbox WHERE buyer_userid = $1', [a.userid])).toEqual([{ n: 1 }]);
     process.env.BILLING_ENV = 'both';
-    expect((await app.inject({ url: '/phone/v3/me/state', headers: bearer(a.phoneToken) })).json().entitlement.pro).toBe(true);
+    expect((await phoneState(app, a.phoneToken)).json().entitlement.pro).toBe(true);
   });
 
   test('a product that is not for sale is recorded, grants nothing and is refused', async () => {
@@ -177,7 +178,7 @@ describe('what a plan does (no plan is on sale today)', () => {
     const m = await rows('SELECT expires_date FROM membership WHERE buyer_userid = $1 AND invite_code IS NULL', [a.userid]);
     expect(m).toHaveLength(1);
     expect(Number(m[0].expires_date)).toBe(Math.floor(renewed.expiresDate / 1000));
-    const state = (await app.inject({ url: '/phone/v3/me/state', headers: bearer(a.phoneToken) })).json().entitlement;
+    const state = (await phoneState(app, a.phoneToken)).json().entitlement;
     expect(state).toMatchObject({ pro: true, source: 'own', lifetime: false, expiresAt: Math.floor(renewed.expiresDate / 1000), productId: 'test.plan' });
     const pay = await rows('SELECT auto_renew_status, recent_subscription_start_date FROM payments WHERE transaction_id = $1', [renewed.transactionId]);
     expect(pay).toEqual([{ auto_renew_status: 1, recent_subscription_start_date: '1700000000000' }]);
@@ -185,7 +186,7 @@ describe('what a plan does (no plan is on sale today)', () => {
 });
 
 describe('the App Store tells us', () => {
-  const state = async (token = a.phoneToken) => (await app.inject({ url: '/phone/v3/me/state', headers: bearer(token) })).json();
+  const state = async (token = a.phoneToken) => (await phoneState(app, token)).json();
 
   test('a purchase the phone never reported still counts: the user is the one whose store id the app put on it; a repeat of the same notification changes nothing', async () => {
     const t = track(tx({ appAccountToken: STORE_ID }));

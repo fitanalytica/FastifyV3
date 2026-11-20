@@ -1,6 +1,7 @@
 import { test, expect, beforeAll, afterAll } from 'vitest';
 import { build, createAccount, type Account, type TestApp } from '../../helpers/app.js';
 import { PHONE_BATCH, WEARABLE_BATCH, activity, activityRow, bearer } from '../../helpers/fixtures.js';
+import { phoneBatch } from '../../helpers/viaSync.js';
 
 let app: TestApp;
 let acc: Account;
@@ -16,7 +17,7 @@ test('a watch upload is tosend 2, and the phone repeat acknowledges it (LEAST)',
   expect(w.json().results[0]).toEqual({ activityid: a.activityid, status: 'created', tosend: 2 });
   expect((await activityRow(app, a.activityid)).iswatch).toBe(true);
 
-  const p = await post(PHONE_BATCH, acc.phoneToken, [a]);
+  const p = await phoneBatch(app, acc.phoneToken, [a]);
   expect(p.json().results[0]).toEqual({ activityid: a.activityid, status: 'exists', tosend: 1 });
   expect((await activityRow(app, a.activityid)).tosend).toBe(1);
 

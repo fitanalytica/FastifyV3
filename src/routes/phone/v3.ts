@@ -1,14 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { activitiesBatchV3 } from '../../controller/common/v3/activitiesbatch.js';
-import { deleteActivityV3 } from '../../controller/common/v3/deleteactivity.js';
-import { meV3 } from '../../controller/common/v3/me.js';
 import { refreshTokenV3 } from '../../controller/common/v3/refreshtoken.js';
-import { ackV3 } from '../../controller/phone/v3/ack.js';
-import { activitiesV3 } from '../../controller/phone/v3/activities.js';
 import { feedActivityV3 } from '../../controller/phone/v3/feedactivity.js';
 import { feedV3 } from '../../controller/phone/v3/feed.js';
 import { devLoginV3 } from '../../controller/phone/v3/devlogin.js';
-import { inboxV3 } from '../../controller/phone/v3/inbox.js';
 import { mediaV3 } from '../../controller/phone/v3/media.js';
 import { profileImageCommitV3 } from '../../controller/phone/v3/profileimagecommit.js';
 import { profileBgV3, profilePicV3 } from '../../controller/phone/v3/profileimageget.js';
@@ -20,51 +14,54 @@ import { mediaRemoveV3 } from '../../controller/phone/v3/mediaremove.js';
 import { postDeleteV3 } from '../../controller/phone/v3/postdelete.js';
 import { postPutV3 } from '../../controller/phone/v3/postput.js';
 import { postsV3 } from '../../controller/phone/v3/posts.js';
-import { profilePutV3 } from '../../controller/phone/v3/profileput.js';
-import { profileVisibilityV3 } from '../../controller/phone/v3/profilevisibility.js';
 import { userFeedV3 } from '../../controller/phone/v3/userfeed.js';
 import { userProfileV3 } from '../../controller/phone/v3/userprofile.js';
 import { redeemV3 } from '../../controller/phone/v3/redeem.js';
 import { purchaseIosV3 } from '../../controller/phone/v3/purchaseios.js';
-import { stateV3 } from '../../controller/phone/v3/state.js';
 import { weatherV3 } from '../../controller/phone/v3/weather.js';
+import { installV3 } from '../../controller/phone/v3/install.js';
+import { watchTokenV3 } from '../../controller/phone/v3/watchtoken.js';
+import { syncV3 } from '../../controller/phone/v3/sync.js';
+import { ipLocationHookV3 } from '../../controller/phone/v3/iplocation.js';
 import { accountDeleteV3 } from '../../controller/phone/v3/accountdelete.js';
 import { accountCodeV3, accountCodeVerifyV3 } from '../../controller/phone/v3/accountcode.js';
 import { loginV3 } from '../../controller/phone/v3/login.js';
 import { logoutV3 } from '../../controller/phone/v3/logout.js';
 import { profileV3 } from '../../controller/phone/v3/profile.js';
-import { profileLocationV3 } from '../../controller/phone/v3/profilelocation.js';
-import { RedeemBodySchema, PurchaseIosBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, VisibilityBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
-import { AckBodySchema, ActivityIdParamsSchema, BatchBodySchema, CommitBodySchema, DevLoginBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, FeedQuerySchema, InboxQuerySchema, LocationBodySchema, MediaParamsSchema, LogoutBodySchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema } from '../../schemas/index.js';
+import { RedeemBodySchema, PurchaseIosBodySchema, DeleteCodeBodySchema, LoginBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
+import { SyncBodySchema } from '../../schemas/index.js';
+import { InstallBodySchema, WatchTokenBodySchema } from '../../schemas/index.js';
+import { ActivityIdParamsSchema, CommitBodySchema, DevLoginBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, FeedQuerySchema, MediaParamsSchema, LogoutBodySchema, PresignBodySchema, RefreshBodySchema } from '../../schemas/index.js';
 
 async function phoneRouterV3(fastify: FastifyInstance) {
   const isAuth = { onRequest: [fastify.authenticate('phone')] };
   const isAuthBigBody = { ...isAuth, bodyLimit: 8 * 1024 * 1024 };
 
+  // A phone with location off has its place from the IP address (docs/data/server.md section 7): runs for the secured routes, after sign-in.
+  fastify.addHook('preHandler', ipLocationHookV3);
+
   // UNSECURED ROUTES
 
+  // The install's first call: public, made when the app is first opened, before anyone signs in (limited per address, like the sign-in).
+  fastify.post('/download', { schema: { body: InstallBodySchema } }, installV3);
   fastify.post('/auth/refresh', { schema: { body: RefreshBodySchema } }, refreshTokenV3);
   fastify.post('/auth/login', { schema: { body: LoginBodySchema } }, loginV3);
   fastify.post('/auth/dev-login', { schema: { body: DevLoginBodySchema } }, devLoginV3); // local testing only: 404 unless DEV_LOGIN=true
 
   // SECURED ROUTES
 
-  fastify.get('/me', isAuth, meV3);
-  fastify.get('/me/state', { ...isAuth, schema: { querystring: StateQuerySchema } }, stateV3);
+  fastify.post('/auth/watch-token', { ...isAuth, schema: { body: WatchTokenBodySchema } }, watchTokenV3);
   fastify.post('/purchases/ios', { ...isAuth, schema: { body: PurchaseIosBodySchema } }, purchaseIosV3);
   // Its own list of hooks: the rate limiter adds its hook to the list a route is given, and `isAuth`'s is shared by all the routes above.
   fastify.post('/redeem', { onRequest: [fastify.authenticate('phone')], schema: { body: RedeemBodySchema } }, redeemV3);
   fastify.get('/profile', isAuth, profileV3);
-  fastify.put('/profile', { ...isAuth, schema: { body: ProfileBodySchema } }, profilePutV3);
-  fastify.put('/profile/location', { ...isAuth, schema: { body: LocationBodySchema } }, profileLocationV3);
-  fastify.put('/profile/visibility', { ...isAuth, schema: { body: VisibilityBodySchema } }, profileVisibilityV3);
   fastify.post('/account/delete-code', isAuth, accountCodeV3);
   fastify.post('/account/delete-code/verify', { ...isAuth, schema: { body: DeleteCodeBodySchema } }, accountCodeVerifyV3);
   fastify.delete('/account', { ...isAuth, schema: { body: DeleteCodeBodySchema } }, accountDeleteV3);
   fastify.post('/auth/logout', { ...isAuth, schema: { body: LogoutBodySchema } }, logoutV3);
 
-  fastify.post('/activities/batch', { ...isAuthBigBody, schema: { body: BatchBodySchema } }, activitiesBatchV3);
-  fastify.get('/activities', { ...isAuth, schema: { querystring: RestoreQuerySchema } }, activitiesV3);
+  fastify.post('/sync', { ...isAuthBigBody, schema: { body: SyncBodySchema } }, syncV3);
+
   fastify.get('/feed', { ...isAuth, schema: { querystring: FeedQuerySchema } }, feedV3);
   fastify.get('/feed/:activityid', { ...isAuth, schema: { params: ActivityIdParamsSchema } }, feedActivityV3);
   fastify.get('/users/:userid', { ...isAuth, schema: { params: UserIdParamsSchema } }, userProfileV3);
@@ -85,9 +82,6 @@ async function phoneRouterV3(fastify: FastifyInstance) {
   const image = { onRequest: [fastify.authenticate('phone', { altHeader: 'x-access-token' })], schema: { params: ProfileImageParamsSchema } };
   fastify.get('/profilepic/:userid/:value', image, profilePicV3);
   fastify.get('/profilebg/:userid/:value', image, profileBgV3);
-  fastify.get('/activities/inbox', { ...isAuth, schema: { querystring: InboxQuerySchema } }, inboxV3);
-  fastify.post('/activities/ack', { ...isAuth, schema: { body: AckBodySchema } }, ackV3);
-  fastify.delete('/activities/:activityid', { ...isAuth, schema: { params: ActivityIdParamsSchema } }, deleteActivityV3);
 }
 
 export default phoneRouterV3;

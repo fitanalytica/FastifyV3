@@ -21,6 +21,24 @@ In the app, this version is set in one place, `src/data/api/config.ts` (`PHONE_V
 A token of the other kind is refused with 403 `WRONG_DEVICE`, and so is a token of a device v3 does not support (`chrome`, `mac`, or a `downloads` row with no `device_type`). The watch's group has only what the watch calls ([watch.md](watch.md)): refresh, `me`, the activities. It has no logout and no `watch-token` (the phone calls that one, on its own group).
 `GET /health` has no prefix. Example: the batch upload is `POST /phone/v3/activities/batch` from the phone and `POST /wearable/v3/activities/batch` from the watch.
 
+## 0b. What moved into `POST /sync`
+
+The phone does not call a route for each of these any more: they are **sections of one call**, `POST /phone/v3/sync` ([sync.md](sync.md)), and **the old phone routes were removed** (the watch's own routes stay).
+
+| Removed phone route | Is now |
+|---|---|
+| `POST /activities/batch` | `up.activities.send` (up to 20 items; the answer has one result per item) |
+| `DELETE /activities/:activityid` | `up.activities.delete` (up to 20 ids; `ok`, or `NOT_FOUND` which counts as done) |
+| `GET /activities/inbox`, `POST /activities/ack` | `up.inbox = { ack?, pull? }`; the activities come back in `down.inbox` |
+| `PUT /profile`, `PUT /profile/visibility`, `PUT /profile/location` | `up.profile = { put?, visibility?, location? }` |
+| `PUT /device` | `up.device` |
+| `GET /me/state` | `up.state = { platform?, catalog?, ads? }`; the state comes back in `down.state` |
+| `PUT /walk/today`, `PUT /walk/history` | `up.walk = { today?, history? }` |
+| `GET /activities` (the phone's restore) | `restore = { walk?, activities?: { before?, limit? } }`; the answer is `down.restore = { walk?, activities? }` ([sync.md](sync.md) section 5) |
+| `GET /me` | removed (nothing used it) |
+
+**Still their own routes:** sign-in, refresh, logout, delete account, `GET /profile` (the sign-in decides on it: 404 is a new user), the watch's `GET /activities`, media and profile images, posts, feed, users, weather, purchases and redeem. A section's body has the same fields and rules as the route it replaced; a body that does not match fails **that section only** (`BAD_REQUEST`), never the whole call. Where the sections below show a route, read it as the section above.
+
 ## 1. Tokens and devices
 
 | Token | Where | Life |
@@ -91,6 +109,41 @@ Answer: `{ accessToken, refreshToken, userid, downloadid, email, givenName, fami
 `POST /auth/dev-login` (`DEV_LOGIN=true` only) stays for local test users.
 
 **Logging out** is `POST /auth/logout` with this device's refresh token ([section 1](#1-tokens-and-devices)); the phone needs the server for it (offline, the user stays signed in and is told to connect), except when the user removed the app from their Apple ID, which signs them out regardless ([phone.md](phone.md) section 9b).
+
+## 1c. The location headers (phone routes)
+
+Every request of the signed-in phone carries **`X-Location: on` or `off`** (whether the phone's location permission is on; anything but `off`, or no header, is `on`: the watch and older apps). **`on`**: the server does nothing about location; the phone sends its own place (`PUT /profile/location`, section 7). **`off`**: the IP address is the source of the user's place ([server.md](server.md) section 7, rule 4), even if the last place came from the GPS, and the phone also sends **`X-Ipref`**, the latest `ipref` it was given.
+
+- **The `ipref`** is a time (seconds) and a keyed hash (HMAC-SHA256, the first 32 hex characters) of the IP address and that time, `1731480000.9f2c…`; the address itself is never stored or logged. The server hashes the request's address with the time in the `X-Ipref` it received: **same hash**, nothing; **different hash and the `ipref` over 24 hours old (or missing, or not one of ours)**, the address changed: the place is looked up and saved (`userinfo`: `iso`, `city`, `state`, `lat`, `lon`, `geo_source = 1`, only if the place really is different), and a **new `ipref` is sent back**; **different hash within 24 hours**, ignored.
+- **Every answer to an `off` request carries the `ipref` to keep, as the response header `ipref`**: a new one after a lookup, else the one that was sent. The phone keeps the latest and sends it back; when the user turns location off, the phone drops the one it holds, so the next request makes one lookup. An answer to an `on` request has none.
+- **The lookup:** the local MaxMind GeoLite2-City database (read into memory once) first; the MaxMind web service when the database has no answer. A private or loopback address is never looked up. **A failed lookup blocks nothing and changes nothing** (the place stays as it was, never 0, 0); the new `ipref` still goes out, so it is tried again after a day (or if the address changes by then). It runs inside the request, but only when the address changed.
+- **The address** is the connection's, or `X-Forwarded-For` behind a load balancer (`TRUST_PROXY`, see the production checklist).
+- The device's region goes with the sign-in as `deviceInfo.region` (section 1d): the first guess for the country when the first lookup fails.
+
+## 1d. The device data
+
+What the server keeps about each install (`downloads`, [schema.pg.md](schema.pg.md) section 4). The phone says it in **`deviceInfo`** of `POST /auth/login` (and the dev login), and again with **`PUT /device`** (phone token only, 204) when something changed:
+
+| Field | Column | Notes |
+|---|---|---|
+| `os` | `device_os` (10) | the system version ("17.4") |
+| `appVersion` | `appversion` (10) | "1.4.0" |
+| `model` | `device_model` (100) | the family, "iPhone" (not the marketing name) |
+| `code` | `device_code` (100) | the machine identifier, "iPhone16,1" |
+| `manufacturer` | `device_manufacturer` (100) | "Apple" |
+| `timezone` | `timezone` | an IANA name |
+| `fcmToken` | `fcm_token` | the push token, when the phone has one (only with notifications allowed: [phone.md](phone.md) section 9d1). **`null` takes it away** (the user turned notifications off); an empty text or none keeps what is stored. |
+| `region` | (not stored) | 2 letters; the first guess for `iso` when the IP lookup finds nothing |
+
+Everything is optional; a text longer than its column is **cut, not refused**; an empty one is nothing; **a field the request does not carry keeps what the row had**. Every sign-in and every `PUT /device` also sets `last_access_date`. `PUT /device` changes only the caller's own phone install (a watch's row, or someone else's, is never changed).
+
+**The install's first call: `POST /phone/v3/download`** (public: no token; limited per address like the sign-in). **Whenever the app is installed and first opened, signed in or not**, the phone sends `{ downloadid, deviceid, platform?, deviceInfo? }` (its Keychain's download id and device id, section 1d's device data) and the server **makes the install's `downloads` row** with no owner (`userid` empty), the device id, the device data and the place of the request's IP address. **It answers at once, as the first payload, `{ downloadid, place }`**, where `place` is `{ iso, city, state, country, lat, lon }` (`lat` and `lon` only when this very call looked them up) or `null` when the server knows none. The phone keeps it, so it knows where it is before anyone signs in and before location is allowed. A repeat (the app opened again before signing in, or the first call lost) brings the row up to date and answers the same place; the place is found **once**. **The watch is the same: `POST /wearable/v3/download`** makes the watch's own row (`device_type = watch`, `watchos` or `wearos`), with its own download id and device id, also public.
+
+**Signing in then sets the owner of that row**: the login (`downloadid`, `deviceid`) updates the same row with the `userid` (and makes the row if the install never called, or the call was lost). A call with no owner never clears an owner.
+
+**`POST /phone/v3/auth/watch-token`** (the phone's token; body `{ deviceid, downloadid?, device?, platform?, deviceInfo? }` for the watch): the phone gives the watch its **own** tokens ([watch.md](watch.md) section 2). **The moment the watch's tokens are made, its `downloads` row gets the user's id** (the row is made here if the watch never called in), and the phone's row gets `is_watch_paired = true`. Answers `{ accessToken, refreshToken, userid, downloadid }`. The watch's device id **must not be the phone's** (a token row is one per device id: the same id would sign the phone out): 400. The phone's own tokens are never copied to the watch. Only a phone token may call it.
+
+**The first-download place** ([server.md](server.md) section 7, rule 1): while an install's row has no `iso`, the first call (or the sign-in, or the next `PUT /device`) looks up the request's IP address (the local database, then the web service) and stores `iso`, `city` and `state` in the row; if there is no answer, `region` is the first guess for `iso`. It is **found once and never changed after**: the user's place is `userinfo`'s. **A new profile** (the first `PUT /profile`) starts with the place of its own IP address (`geo_source = 1`, with coordinates), else the place of the user's latest phone install; the phone's own place (`PUT /profile/location`) replaces it.
 
 ## 2. Upload a batch
 
@@ -274,10 +327,12 @@ Built in v3 as the three calls of [section 8b](#8b-deleting-the-account-with-an-
 
 ## 10. Step history
 
+**`POST /sync` carries both of these in one request** (`up.walk = { history?, today? }`, [sync.md](sync.md)); **the phone now sends them that way** (the two routes below are no longer called by the app and stay for old versions).
+
 | Endpoint | Does |
 |---|---|
-| `PUT /walk/today` | Today's plain columns, sent on every sync: `{ dtgraph, stepcount, distance, ascend, descend, max_steps, max_steps_date, max_distance, max_distance_date, steps_goal, yesterday? }`, where `yesterday` is `{ dtgraph, stepcount, distance }` for the day before (`dtgraph - 86400`), sent whenever the phone has a row for it, for yesterday's leaderboard. A few hundred bytes. Answers 204, or 400 `bad_dtgraph` / `bad_yesterday` ([server.md](server.md) section 11). |
-| `PUT /walk/history` | The arrays, gzip-compressed: `{ base, dtgraph_json, stepcount_json, ascend_json, descend_json, distance_json, iso_json }`, where `base` is the day the deltas were encoded against. Sent once a day, when a day closes, or when history changes. Answers 204. |
+| `PUT /walk/today` | Today's plain columns (**no floors down**), sent when they change: `{ dtgraph, stepcount, distance, ascend, max_steps, max_steps_date, max_distance, max_distance_date, steps_goal, yesterday? }`, where `yesterday` is `{ dtgraph, stepcount, distance }` for the day before (`dtgraph - 86400`), sent whenever the phone has a row for it, for yesterday's leaderboard. A few hundred bytes. Answers 204, or 400 `BAD_DTGRAPH` / `BAD_YESTERDAY` ([server.md](server.md) section 11). **Built.** |
+| `PUT /walk/history` | The arrays of the completed days (gzip allowed): `{ base, dtgraph_json, stepcount_json, ascend_json, distance_json, iso_json }`, where `base` is the day the deltas were encoded against. **No `descend_json`, no coordinates.** Sent when a completed day is new or changed. 204, or 400 `BAD_HISTORY` (the arrays do not line up, or `base` is not a day). With no row yet, the server makes one. **Built** (`tests/routes/walk.test.ts`). |
 | `GET /walk` | The user's row: the plain columns, the arrays and `history_base`. Used on a restore. |
 
 `dtgraph` is a date label, not a moment ([README](README.md) section 5). What the server does: [server.md](server.md) section 11. What the phone does: [phone.md](phone.md) section 11. The formats: [format.md](format.md) section 5.

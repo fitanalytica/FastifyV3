@@ -4,6 +4,7 @@ import { build, createAccount, type Account, type TestApp } from '../helpers/app
 import { bearer } from '../helpers/fixtures.js';
 import { buildCatalog, findProduct } from '../../src/services/store/getCatalog.js';
 import { CATALOG_DATA, type CatalogData } from '../../src/services/store/catalogData.js';
+import { phoneState, phoneProfilePut } from '../helpers/viaSync.js';
 
 // What the user has and what is on sale (docs/data/api.md section 15). The membership table is shared with the v2 API: its expiry is in seconds (Android) or in milliseconds
 // (iOS), and both must count the same.
@@ -13,7 +14,7 @@ const NOW = () => Math.floor(Date.now() / 1000);
 const LIFETIME_MS = 9999999999999;
 const LIFETIME_S = 9999999999;
 
-const state = async (query = '', token = a.phoneToken) => app.inject({ url: `/phone/v3/me/state${query}`, headers: bearer(token) });
+const state = async (query = '', token = a.phoneToken) => phoneState(app, token, Object.fromEntries(new URLSearchParams(query)));
 const member = (table: string, v: { buyer?: string; code?: string | null; by?: string | null; expires?: number | null; product?: string; ref?: string; created?: number; shared?: number | null; redeemed?: number | null }) =>
   app.pg.writer.query(
     `INSERT INTO ${table} (buyer_userid, invite_code, redeemed_by_userid, expires_date, product_id, reference_id, created_date, shared_date, redeemed_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -71,11 +72,11 @@ test('the account token for purchases: none before a profile; made once for a pr
   expect(first).toMatch(/^[0-9a-f-]{36}$/);
   expect((await state()).json().accountToken).toBe(first);
   expect((await state('', b.phoneToken)).json().accountToken).toBe((await app.pg.writer.query('SELECT store_id FROM userinfo WHERE userid = $1', [b.userid])).rows[0].store_id);
-  const made = await app.inject({ method: 'PUT', url: '/phone/v3/profile', headers: bearer(noProfile.phoneToken), payload: { fname: 'Nia' } });
+  const made = await phoneProfilePut(app, noProfile.phoneToken, { fname: 'Nia' });
   expect(made.statusCode).toBe(200);
   const token = (await app.pg.writer.query('SELECT store_id FROM userinfo WHERE userid = $1', [noProfile.userid])).rows[0].store_id;
   expect(token).toMatch(/^[0-9a-f-]{36}$/);
-  await app.inject({ method: 'PUT', url: '/phone/v3/profile', headers: bearer(noProfile.phoneToken), payload: { fname: 'Nia R' } });
+  await phoneProfilePut(app, noProfile.phoneToken, { fname: 'Nia R' });
   expect((await state('', noProfile.phoneToken)).json().accountToken).toBe(token);
 });
 
@@ -187,8 +188,8 @@ test('a product is found by its store id, also when it is off sale (a purchase m
 });
 
 test('no token is refused, and a watch token too (phone only)', async () => {
-  const none = await app.inject({ url: '/phone/v3/me/state' });
+  const none = await phoneState(app, null);
   expect(none.statusCode).toBe(400);
   expect(none.json().code).toBe('INVALID_TOKEN_FORMAT');
-  expect((await app.inject({ url: '/phone/v3/me/state', headers: bearer(a.watchToken) })).statusCode).toBe(403);
+  expect((await phoneState(app, a.watchToken)).statusCode).toBe(403);
 });

@@ -26,6 +26,12 @@ export interface Env {
   loginRateLimit: number;
   /** Which billing tables the Pro state reads (docs/data/api.md section 15): `production` (the default), `sandbox` (the `_sandbox` copies) or `both` (a server that also serves TestFlight and App Review). */
   billingEnv: 'production' | 'sandbox' | 'both';
+  /** The IP lookup for users with location off (docs/data/server.md section 7): the local MaxMind database, then the MaxMind web service. Without either the place stays unknown. Never committed. */
+  geoip: { dbPath?: string; accountId?: string; licenseKey?: string };
+  /** Signs the `ipref` (a keyed hash of the address); unset, it is derived from the JWT secret. */
+  iprefKey: string;
+  /** Behind a load balancer: read the client's address from X-Forwarded-For (`true`, or the number of proxies). Unset: the socket's address. */
+  trustProxy: boolean | number;
 }
 
 /** Where the media lives (docs/data/server.md section 6). In production only the region is set: the credentials come from the server's role. */
@@ -63,6 +69,14 @@ function refreshGrace(value: string | undefined): number {
   if (value === undefined || value === '') return DEFAULT_REFRESH_GRACE;
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) throw new Error(`REFRESH_GRACE_SECONDS must be a whole number of seconds, got "${value}"`);
+  return n;
+}
+
+function trustProxy(value: string | undefined): boolean | number {
+  if (!value || value === 'false') return false;
+  if (value === 'true') return true;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`TRUST_PROXY must be true, false or a number of proxies, got "${value}"`);
   return n;
 }
 
@@ -111,6 +125,9 @@ export function env(): Env {
     sns: { topicArn: e.SNS_ARN || undefined, region: e.SNS_REGION || 'us-east-1' },
     loginRateLimit: Number(e.LOGIN_RATE_LIMIT) > 0 ? Number(e.LOGIN_RATE_LIMIT) : 20,
     billingEnv: billingEnv(e.BILLING_ENV),
+    geoip: { dbPath: e.GEOIP_DB_PATH || undefined, accountId: e.MAXMIND_ACCOUNT_ID || undefined, licenseKey: e.MAXMIND_LICENSE_KEY || undefined },
+    iprefKey: e.IPREF_KEY || `ipref:${e.JWE_SECRET}`,
+    trustProxy: trustProxy(e.TRUST_PROXY),
     google: { clientIds: (e.GOOGLE_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
   };
 }

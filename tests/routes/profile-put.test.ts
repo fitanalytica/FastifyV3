@@ -1,12 +1,13 @@
 import { test, expect, beforeAll, afterAll } from 'vitest';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { bearer } from '../helpers/fixtures.js';
+import { phoneProfilePut, phoneVisibility } from '../helpers/viaSync.js';
 
 // Edit profile (docs/data/api.md section 7): the first call makes the row, later calls change only what they carry.
 let app: TestApp;
 let a: Account;
 
-const put = (body: unknown, token = a.phoneToken) => app.inject({ method: 'PUT', url: '/phone/v3/profile', headers: bearer(token), payload: body as object });
+const put = (body: unknown, token = a.phoneToken) => phoneProfilePut(app, token, body);
 const row = async () => (await app.pg.writer.query('SELECT * FROM userinfo WHERE userid = $1', [a.userid])).rows[0];
 
 beforeAll(async () => {
@@ -32,7 +33,7 @@ test('the first call makes the profile (and the profile route reads it back); no
 
 test('a later call changes only the fields it carries, and keeps the registration date and visibility', async () => {
   const before = await row();
-  await app.inject({ method: 'PUT', url: '/phone/v3/profile/visibility', headers: bearer(a.phoneToken), payload: { hidden: true } });
+  await phoneVisibility(app, a.phoneToken, true);
   expect((await put({ weight: 70 })).statusCode).toBe(200);
   const r = await row();
   expect(r).toMatchObject({ fname: 'Asha', lname: 'Rao', gender: 'other', about: 'Runs at dawn', hideprofile: true });
@@ -54,10 +55,10 @@ test('a name is trimmed; a repeat changes nothing', async () => {
   expect((await row()).fname).toBe('Asha');
 });
 
-test('an unknown field is ignored (visibility has its own route); nothing to change or a value out of range is refused', async () => {
-  expect((await put({ fname: 'Asha', hideprofile: true })).statusCode).toBe(200);
+test('an unknown field is refused (visibility is its own part of the call), and changes nothing; nothing to change or a value out of range is refused', async () => {
+  expect((await put({ fname: 'Asha', hideprofile: false })).statusCode).toBe(400);
   expect((await row()).hideprofile).toBe(true); // was set above by the visibility call, and not touched here
-  await app.inject({ method: 'PUT', url: '/phone/v3/profile/visibility', headers: bearer(a.phoneToken), payload: { hidden: false } });
+  await phoneVisibility(app, a.phoneToken, false);
   await put({ fname: 'Asha', hideprofile: true });
   expect((await row()).hideprofile).toBe(false);
   expect((await put({})).statusCode).toBe(400);

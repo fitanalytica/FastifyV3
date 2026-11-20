@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, WEARABLE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneDelete, phoneRestore } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let me: Account, other: Account;
@@ -14,12 +15,18 @@ beforeAll(async () => {
   app = await build(); me = await createAccount(app); other = await createAccount(app);
   // 7 phone activities, one hour apart; the 3rd newest has a media list
   const items = Array.from({ length: 7 }, (_, i) => activity(me.phoneDownloadid, { startdate: base + i * 3600, enddate: base + i * 3600 + 1800, media_v2: i === 4 ? media : [] }));
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(me.phoneToken), payload: { activities: items } });
+  await phoneBatch(app, me.phoneToken, items);
   ids.push(...items.map((a) => a.activityid).reverse());
 });
 afterAll(async () => { await me.remove(); await other.remove(); await app.close(); });
 
-const get = (url: string, token = me.phoneToken) => app.inject({ url, headers: bearer(token) });
+// The phone's restore is a part of the sync call now; the watch's list is still its own route.
+const get = (url: string, token = me.phoneToken) => {
+  const m = /^\/phone\/v3\/activities(?:\?(.*))?$/.exec(url);
+  if (!m) return app.inject({ url, headers: bearer(token) });
+  const q = new URLSearchParams(m[1] ?? '');
+  return phoneRestore(app, token, { ...(q.get('limit') ? { limit: Number(q.get('limit')) } : {}), ...(q.get('before') ? { before: q.get('before') as string } : {}) });
+};
 const idsOf = (res: { json(): { activities: { activityid: string }[] } }) => res.json().activities.map((a) => a.activityid);
 
 /** Every row of the phone's restore, newest first. */
@@ -50,8 +57,8 @@ async function walk(path: string, limit: number, token = me.phoneToken) {
 
 test('full pages: newest first, every activity once, total on the first page only, deleted markers never', async () => {
   const gone = activity(me.phoneDownloadid, { startdate: base + 99 * 3600, enddate: base + 99 * 3600 + 60 });
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(me.phoneToken), payload: { activities: [gone] } });
-  await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${gone.activityid}`, headers: bearer(me.phoneToken) });
+  await phoneBatch(app, me.phoneToken, [gone]);
+  await phoneDelete(app, me.phoneToken, gone.activityid);
 
   const { seen, pages } = await walk('/phone/v3/activities', 3);
   expect(seen).toEqual(ids);                                  // newest first, none missing, none twice, no marker
@@ -69,10 +76,10 @@ test('paging survives equal start times and a newer activity arriving between pa
   const acc = await createAccount(app);
   try {
     const same = Array.from({ length: 5 }, () => activity(acc.phoneDownloadid, { startdate: base, enddate: base + 10 }));
-    await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(acc.phoneToken), payload: { activities: same } });
+    await phoneBatch(app, acc.phoneToken, same);
     const p1 = (await get('/phone/v3/activities?limit=2', acc.phoneToken)).json();
     const newer = activity(acc.phoneDownloadid, { startdate: base + 5000, enddate: base + 5100 });
-    await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(acc.phoneToken), payload: { activities: [newer] } });
+    await phoneBatch(app, acc.phoneToken, [newer]);
     const rest: string[] = [];
     let next: string | null = p1.next;
     while (next) { const p = (await get(`/phone/v3/activities?limit=2&before=${next}`, acc.phoneToken)).json(); rest.push(...p.activities.map((a: { activityid: string }) => a.activityid)); next = p.next; }
@@ -124,8 +131,8 @@ test('the watch gets only its own activities, whatever it asks for, and never mo
   expect((await get('/wearable/v3/activities?limit=51', me.watchToken)).statusCode).toBe(400);
   expect((await get('/wearable/v3/activities/summaries', me.watchToken)).json().code).toBe('NOT_FOUND');
 });
-test('the query is checked: limit and cursor (phone), limit (watch)', async () => {
-  for (const q of ['?limit=0', '?limit=51', '?limit=x', '?before=nope', '?before=99999999999.' + randomUUID()]) {
+test('the request is checked: limit (1 to 300) and cursor (phone), limit (watch)', async () => {
+  for (const q of ['?limit=0', '?limit=301', '?limit=x', '?before=nope', '?before=99999999999.' + randomUUID()]) {
     const res = await get('/phone/v3/activities' + q);
     expect(res.statusCode, q).toBe(400);
     expect(res.json().code, q).toBe('BAD_REQUEST');
@@ -138,14 +145,14 @@ test('only the user\'s own, and the right kind of token', async () => {
   expect((await get('/phone/v3/activities', other.phoneToken)).json()).toMatchObject({ activities: [], next: null, total: 0 });
   expect((await get('/phone/v3/activities', me.watchToken)).json().code).toBe('WRONG_DEVICE');
   expect((await get('/wearable/v3/activities', me.phoneToken)).json().code).toBe('WRONG_DEVICE');
-  expect((await app.inject({ url: '/phone/v3/activities' })).json().code).toBe('INVALID_TOKEN_FORMAT');
+  expect((await phoneRestore(app, null)).json().code).toBe('INVALID_TOKEN_FORMAT');
 });
 
 test('replies are gzip when the app asks, and decode to the same JSON', async () => {
-  const url = '/phone/v3/activities?limit=7';
-  const gz = await app.inject({ url, headers: { ...bearer(me.phoneToken), 'accept-encoding': 'gzip' } });
+  const call = (headers: Record<string, string>) => app.inject({ method: 'POST', url: '/phone/v3/sync', headers: { ...bearer(me.phoneToken), ...headers }, payload: { restore: { activities: { limit: 7 } } } });
+  const gz = await call({ 'accept-encoding': 'gzip' });
   expect(gz.headers['content-encoding']).toBe('gzip');
-  const plain = await app.inject({ url, headers: bearer(me.phoneToken) });
+  const plain = await call({});
   expect(plain.headers['content-encoding']).toBeUndefined();
   expect(JSON.parse(gunzipSync(gz.rawPayload).toString())).toEqual(plain.json());
 });

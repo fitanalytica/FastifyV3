@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneDelete } from '../helpers/viaSync.js';
 
 // Someone's profile and their own feed (docs/data/api.md section 14).
 let app: TestApp;
@@ -14,7 +15,7 @@ const addProfile = (acc: Account, over: { hide?: boolean; about?: string; gmt?: 
     [acc.userid, over.gmt ?? 0, over.hide ?? false, over.about ?? null],
   );
 const send = (acc: Account, items: ReturnType<typeof activity>[]) =>
-  app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(acc.phoneToken), payload: { activities: items } });
+  phoneBatch(app, acc.phoneToken, items);
 const get = (url: string, token = viewer.phoneToken) => app.inject({ url, headers: bearer(token) });
 const profile = (id: string, token = viewer.phoneToken) => get(`/phone/v3/users/${id}`, token);
 const feed = async (id: string, qs = '', token = viewer.phoneToken) => (await get(`/phone/v3/users/${id}/feed${qs}`, token)).json() as { posts: { kind: string; author: { userid: string }; activity?: { activityid: string }; post?: { postid: string } }[]; next: string | null };
@@ -95,7 +96,7 @@ test('kind and media narrow it; a cursor pages it', async () => {
 });
 
 test('a deleted activity and a deleted post are not listed or counted', async () => {
-  await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${third.activityid}`, headers: bearer(a.phoneToken) });
+  await phoneDelete(app, a.phoneToken, third.activityid);
   await app.inject({ method: 'DELETE', url: `/phone/v3/posts/${postid}`, headers: bearer(a.phoneToken) });
   expect((await feed(a.userid)).posts.map((p) => p.kind)).toEqual(['activity', 'activity']);
   expect((await profile(a.userid)).json().counts.activities).toBe(2);

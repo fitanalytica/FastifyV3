@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch } from '../helpers/viaSync.js';
 
 // What a user shares from Home (docs/data/api.md section 12): the post, its photos and videos (through the media routes), the user's own list, and the feed.
 // S3 is a fake (an in-memory bucket), as in media-upload.test.ts.
@@ -175,7 +176,7 @@ test('own posts, newest first, a page at a time with a cursor; others\' and dele
 
 test('the feed: posts and activities together, newest first, each with its kind; a post carries its content and media', async () => {
   const act = activity(a.phoneDownloadid, { startdate: T + 5000, enddate: T + 5100 });
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(a.phoneToken), payload: { activities: [act] } });
+  await phoneBatch(app, a.phoneToken, [act]);
   const postId = randomUUID();
   await put(postId, { posted_at: T + 6000, content: withText({ template: 'steps', steps: 4000, dtgraph: 1760000000 }) });
   const olderPost = randomUUID();

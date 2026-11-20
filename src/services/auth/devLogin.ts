@@ -31,11 +31,11 @@ async function devUserFor(app: FastifyInstance, body: Pick<DevLoginBody, 'provid
 
 /** LOCAL TESTING ONLY (DEV_LOGIN=true; otherwise it answers like an unknown route).
  *  Signs in a fixed dev user, with no Apple/Google check, through the same loginDevice as the real login. */
-export async function devLogin(app: FastifyInstance, b: DevLoginBody): Promise<DevLoginResponse> {
+export async function devLogin(app: FastifyInstance, b: DevLoginBody, ip?: string): Promise<DevLoginResponse> {
   if (!env().devLogin) throw errors.NotFound('Route not found', ErrorCode.NOT_FOUND);
   const downloadid = b.downloadid ?? randomUUID();
   const { userid, applegoogleid } = await devUserFor(app, b);
-  await registerDownload(app, { downloadid, userid, platform: b.platform, watch: b.watch });
+  await registerDownload(app, { downloadid, userid, deviceid: b.deviceid, platform: b.platform, watch: b.watch, info: b.deviceInfo, ip });
   const tokens = await loginDevice(app, { deviceid: b.deviceid, userid, downloadid, applegoogleid, device: b.device ?? 'dev' });
   return { ...tokens, userid, downloadid };
 }

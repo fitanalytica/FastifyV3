@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { build, createAccount, type Account, type TestApp } from '../helpers/app.js';
 import { PHONE_BATCH, activity, bearer } from '../helpers/fixtures.js';
+import { phoneBatch, phoneDelete } from '../helpers/viaSync.js';
 
 let app: TestApp;
 let owner: Account, other: Account;
@@ -13,8 +14,8 @@ beforeAll(async () => {
   const mk = (extra: Record<string, unknown> = {}) => activity(owner.phoneDownloadid, extra);
   const [a, b, c] = [mk(), mk(), mk()];
   shown = a.activityid; hiddenAct = b.activityid; deleted = c.activityid;
-  await app.inject({ method: 'POST', url: PHONE_BATCH, headers: bearer(owner.phoneToken), payload: { activities: [a, b, c] } });
-  await app.inject({ method: 'DELETE', url: `/phone/v3/activities/${deleted}`, headers: bearer(owner.phoneToken) });
+  await phoneBatch(app, owner.phoneToken, [a, b, c]);
+  await phoneDelete(app, owner.phoneToken, deleted);
   // the owner's profile is shown: userinfo with hideprofile = false
   await app.pg.writer.query(`INSERT INTO userinfo (userid, fname, hideprofile, dateregistered) VALUES ($1, 'Owner', false, 1700000000)`, [owner.userid]);
 });

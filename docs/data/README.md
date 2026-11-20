@@ -13,6 +13,7 @@ and location, and media. Feeds, challengers, subscription and other server-sent 
 | [production-checklist.md](production-checklist.md) | whoever deploys | **Everything to do before production**: schema scripts in order, scripts to run once, environment settings, code still to build. Keep it current. |
 | [phone.md](phone.md) | React Native app | Stores, the activities table, the sync loop, media preparation, profile and location, logout |
 | [watch.md](watch.md) | watch app | The watch's table, token from the phone, sending an activity, restore |
+| [sync.md](sync.md) | server, phone | The unified sync call: one request carrying every changed section, one answer, per-section results, restore in one shot (proposed) |
 | [performance.md](performance.md) | everyone | Where to make the tables and the sync processes more efficient and faster, with a read-only report ([perf-report.sql](perf-report.sql)) |
 | [schema.pg.md](schema.pg.md) | server | The Postgres tables after the changes, with indexes, constraints and the migration |
 | [schema.phone.md](schema.phone.md) | React Native app | SQLite, MMKV keys, Keychain items, files |
@@ -69,7 +70,7 @@ folder of fixtures (JSON in, JSON out):
 9. The deleted markers (`tosend = 0`) are kept; I assumed forever, since they are small.
 10. **Account deletion** ([server.md](server.md) section 8): when the user's data is really removed (at once, or after a grace period), and what happens if they sign in again during it.
 11. A VPN can make the IP lookup report another country while location is off. Accepted.
-12. The `regionHint` on the first request.
+12. The `regionHint` on the first request (built as `deviceInfo.region`: api.md section 1d).
 13. `seconds_from_gmt` is optional and goes stale at daylight-saving changes; `timezone` is the value to rely on.
 14. ~~The old track columns.~~ Resolved: latitude, longitude (5 decimals) and time are increments; elevation and distance are actual values in metres; heart rate is an actual value per location update. The exact start point comes from `geom`.
 15. ~~`usertokens.device`.~~ Decided: `deviceid` is the app's `DeviceInfo.getUniqueId()`, one row per physical device on iOS ([schema.pg.md](schema.pg.md) section 6). `device` stays the model, as information. Rows unused for 365 days are deleted ([server.md](server.md) section 9).

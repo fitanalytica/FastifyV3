@@ -148,7 +148,14 @@ UPDATE userinfo
 
 **Built (v3):** the phone's location (`PUT /profile/location`, `services/profile/updateLocation.ts`): the first UPDATE above, with the country code checked against the server's list and stored upper case, `(0, 0)` refused, `city` and `state` cut to their column length, and a 404 while there is no `userinfo` row.
 **Country names come from the server's list** (`services/location/countries.ts`, keyed by ISO code), never from the database: the tables keep only the code (`userinfo.iso`, `activities.iso`), and a name is added when a reply goes out (`GET /profile` and the location reply). A code the list does not have gives no name, and is not an error when it is already stored.
-The IP lookup (`X-Location: off`, the `ipref`) is not built yet.
+**Built (v3): the IP lookup** ([api.md](api.md) section 1c), for a phone that says `X-Location: off`:
+- `services/location/ipToGeo.ts`: the **local MaxMind GeoLite2-City database** (`GEOIP_DB_PATH`, opened once and kept in memory: no disk read per request), then the **MaxMind web service** (`MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY`, host `geolite.info`, 3 second timeout) when the database cannot answer. A place needs a country in the server's list; no coordinates (or (0, 0)) are `null`, never 0; a private, loopback or link-local address is never looked up; nothing throws, a failure is `null`.
+- `services/location/ipref.ts`: the `ipref` (`<seconds>.<32 hex of HMAC-SHA256(ip|seconds)>`, key `IPREF_KEY`, else derived from the JWT secret) and the check (`same`, `changed`, `ignore`).
+- `services/location/ipLocation.ts` + the hook `controller/phone/v3/iplocation.ts` (a `preHandler` of the phone's v3 routes, so after sign-in): for `X-Location: off` it checks the `X-Ipref`, looks up on `changed`, runs the second UPDATE above (`geo_source = 1`, only when `(city, state, iso)` changed), and answers the `ipref` header. A failed lookup never blocks the request.
+- The client's address is the socket's, or `X-Forwarded-For` behind a load balancer: set `TRUST_PROXY` (`true`, or the number of proxies) there, or every user would be the load balancer.
+- Tests: `tests/services/location/ipToGeo.test.ts`, `ipref.test.ts`, `tests/routes/ip-location.test.ts` (fake sources, so no file or network is needed). Checked once by hand with the real database and the web service (8.8.8.8 → US, 81.2.69.142 → GB/Ipswich, 103.21.58.1 → IN/Mumbai).
+**Built (v3), rules 1 and 2:** the install's `downloads` row is made **when the app is first opened, signed in or not** (`POST /phone/v3/download`, `POST /wearable/v3/download`: `services/auth/install.ts`, public, limited per address like the sign-in) with the download id, the device id (`downloads.deviceid`, `dev-db/09-downloads-device-v3.sql`), the device data and the place of the IP address, which is answered at once as the first payload; **the sign-in then sets the row's owner** (`services/auth/downloads.ts`, `registerDownload`: a repeat with no owner never clears one), and **the watch's tokens set the watch row's owner the moment they are made** (`POST /phone/v3/auth/watch-token`, `services/auth/watchToken.ts`). Both are built on one function, `registerDownload`: the row is made with the device data the phone sent ([api.md](api.md) section 1d) and, while it has no `iso`, the **first-download place** from the request's IP address (`iso`, `city`, `state`), found once and never changed after; if the lookup finds nothing the device's `region` is the first guess for `iso` (rule 2). `PUT /device` (`updateDevice`) keeps the row current and looks the place up again if it is still empty. **A new profile** (`putProfile`, the first call) starts with the place of that request's IP address with coordinates (`geo_source = 1`), else the place of the user's latest phone install (no coordinates); the phone's GPS place replaces it. A watch is the same, with its own row and its own place.
+**Not built:** mapping the machine identifier (`device_code`, "iPhone16,1") to a marketing name for `device_model`; `total_session_count`, `total_session_duration` and `uninstall_date` of `downloads` (nothing in v3 fills them).
 
 ## 8. Deleting an account
 
@@ -192,7 +199,7 @@ The `walkdata` row ([schema.pg.md](schema.pg.md) section 10) is stored as receiv
 
 ```sql
 -- PUT /walk/today: fixed-size columns only, so the large JSON columns are not rewritten
-INSERT INTO walkdata (userid, dtgraph, stepcount, distance, ascend, descend,
+INSERT INTO walkdata (userid, dtgraph, stepcount, distance, ascend,
                       max_steps, max_steps_date, max_distance, max_distance_date, steps_goal,
                       yesterday_dtgraph, yesterday_stepcount, yesterday_distance, ddate)
 VALUES (:userid, :dtgraph, :stepcount, :distance, :ascend, :descend,
@@ -212,12 +219,12 @@ ON CONFLICT (userid) DO UPDATE
 -- PUT /walk/history: the arrays and the base they were encoded against
 UPDATE walkdata
    SET history_base = :base, dtgraph_json = :dtgraph_json, stepcount_json = :stepcount_json, ascend_json = :ascend_json,
-       descend_json = :descend_json, distance_json = :distance_json, iso_json = :iso_json
+       distance_json = :distance_json, iso_json = :iso_json   -- no descend_json: v3 does not keep it
  WHERE userid = :userid;
 ```
 
 If `PUT /walk/history` arrives before any `PUT /walk/today` for a new user, the server inserts the row first (the history request carries `dtgraph` too, or the insert uses `:base`).
-**Checks on `PUT /walk/today`** (answered 400, `bad_dtgraph` or `bad_yesterday`): `dtgraph` is a multiple of 86400 and within one day of the server's UTC date (a local date is at most about 14 hours from UTC, so no time zone is needed);
+**Built** (`services/walk/putToday.ts`, `putHistory.ts`). **Checks on `PUT /walk/history`** (400 `BAD_HISTORY`): `base` is a multiple of 86400, the four arrays have the same length, and the run lengths of `iso_json` add up to it; `iso_json` entries are 2 capital letters (`ZZ` = unknown). **Checks on `PUT /walk/today`** (answered 400, `BAD_DTGRAPH` or `BAD_YESTERDAY`): `dtgraph` is a multiple of 86400 and within one day of the server's UTC date (a local date is at most about 14 hours from UTC, so no time zone is needed);
 `yesterday_dtgraph`, if sent, is exactly `dtgraph - 86400`, and the three `yesterday_*` values come together or not at all. The server does not use `downloads.timezone` for any of this: the phone always knows its own local date.
 
 **The leaderboard for a day (the query behind challengers, read from Postgres, never cached).** The request names the label (`dtgraph`, required, same sanity check). The server does not decide whether it is "today" or "yesterday": a label can sit in either column,

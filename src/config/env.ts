@@ -18,8 +18,14 @@ export interface Env {
   /** The weather providers' keys (docs/data/api.md section 13). Without both the weather route answers 503. Never committed: they are set in the environment. */
   weather: { weatherApiKey?: string; openWeatherKey?: string };
   /** Sign in with Apple and Google (docs/data/api.md section 1b). Without a client id for a provider, its login answers 503. The key is never committed. */
-  apple: { clientId: string; /** The App Store's numeric id of the app (APPLE_APP_ID): needed to check production purchases and notifications. */ appId?: number; teamId?: string; keyId?: string; privateKeyPath?: string; privateKey?: string };
+  apple: { clientId: string; /** The Services ID of Sign in with Apple on the web (APPLE_SERVICES_ID): what Android signs in with, so its tokens are for this audience, not the bundle id. */ servicesId: string; /** The App Store's numeric id of the app (APPLE_APP_ID): needed to check production purchases and notifications. */ appId?: number; teamId?: string; keyId?: string; privateKeyPath?: string; privateKey?: string };
   google: { clientIds: string[] };
+  /**
+   * Google Play purchases (docs/data/api.md section 15). The server asks Google's Play Developer API about a purchase itself, with a service account (the usual `GOOGLE_APPLICATION_CREDENTIALS`
+   * key file, or workload identity in production). Without credentials the purchase route answers 503. `notifyAudience` and `notifyServiceAccount` are what the Pub/Sub push subscription for real-time
+   * developer notifications is set up with: the notification route accepts only a token for that audience from that account.
+   */
+  play: { packageName: string; notifyAudience?: string; notifyServiceAccount?: string };
   /** E-mail goes out through an SNS topic that something else turns into mail (docs/data/api.md section 8b). Without `topicArn` no e-mail is sent. Credentials: the server's role, or AWS_* variables locally. */
   sns: { topicArn?: string; region: string };
   /** How many sign-ins one address may try in a minute (the sign-in route is open to anyone, so it is limited more than the rest). */
@@ -115,6 +121,7 @@ export function env(): Env {
     weather: { weatherApiKey: e.WEATHER_API || undefined, openWeatherKey: e.OPEN_WEATHER_API || undefined },
     apple: {
       clientId: e.APPLE_CLIENT_ID || 'com.fitanalytica',
+      servicesId: e.APPLE_SERVICES_ID || 'com.fitanalytica.weblogin.sid',
       appId: Number(e.APPLE_APP_ID) > 0 ? Number(e.APPLE_APP_ID) : undefined,
       teamId: e.APPLE_TEAM_ID || undefined,
       keyId: e.APPLE_KEY_ID || e.APPLE_SIGNIN_KEYID || undefined,
@@ -129,5 +136,6 @@ export function env(): Env {
     iprefKey: e.IPREF_KEY || `ipref:${e.JWE_SECRET}`,
     trustProxy: trustProxy(e.TRUST_PROXY),
     google: { clientIds: (e.GOOGLE_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean) },
+    play: { packageName: e.PLAY_PACKAGE_NAME || 'com.fitanalytica', notifyAudience: e.PLAY_NOTIFY_AUDIENCE || undefined, notifyServiceAccount: e.PLAY_NOTIFY_SERVICE_ACCOUNT || undefined },
   };
 }

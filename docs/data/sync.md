@@ -61,6 +61,21 @@ Principle: **the phone makes as few requests as it can, each carrying everything
 
 `walk.today` and `walk.history` are exactly the bodies of `PUT /walk/today` and `PUT /walk/history` ([api.md](api.md) section 10; no floors down, a day with no country goes with the current one). The rules do not change: history is sent when a completed day is new or changed and goes **first**; if it fails, today waits (the phone sends today in the next request). One request can carry both, so a day that closes costs one call, not two. `results.walk` is `{ ok, code?, history?: "ok" | code, today?: "ok" | code | "WAITING" }`: `WAITING` is today held back because the history in the same request was refused (nothing of today is written); a refused today does not undo a history saved in the same request.
 
+## 4b. The rank section (dummy leaderboard)
+
+`up.rank` is a **read**, like `state`: `{ "steps": { "Day": n, "Week": n, "Month": n, "Year": n, "All time": n } }` (the user's own totals for the current period of each kind, counted on the phone; **only used while the leaderboard is dummy**, and dropped when it is real). The phone asks **about every six hours** (and at once when it has none): `features/rank/rankSection.ts`, `RANK_EVERY`.
+
+`down.rank` is, for each period, **five people in rank order**: the user, two above and two below (at rank 1: the user and four below; at the bottom: four above), each with the total they had at that moment (up to yesterday, plus today's so far where the server has it):
+
+```json
+"rank": { "Week": { "rank": 41230, "of": 250000, "change": 12,
+  "people": [ { "rank": 41228, "name": "Tom Becker", "place": "Austin, United States", "steps": 54200 }, …, { "rank": 41230, "name": "You", "place": "", "steps": 50242, "you": true }, … ] }, "Day": { … }, … }
+```
+
+`change` is the places gone up since the period before. **A private profile is left out of everyone else's ranking** (not counted in their rank, never shown as their neighbour), **but still gets its own rank**, placed among the public users: the owner sees the card as anyone does. **Only the current period has a rank**: stepping back to a past week or month shows none.
+
+**On the phone** (`features/rank/rankWindow.ts`): the user's live total (up to yesterday plus today's steps) goes into the five; **the five rank numbers stay**, the people are put in order of their totals (a tie goes to the other person) and the user takes the number of the place reached, so the rank moves **only within the five** until the next sync recalculates it. The card ("Your rank") shows the five, the places gained, and the steps to the next person above. Dummy on the server: `services/rank/dummyRank.ts` (the rank from a fixed curve of the totals sent, the others made up); when the leaderboard exists only that file changes.
+
 ## 5. Restore in one shot
 
 **Built** (`services/sync/restore.ts`, `readWalk.ts`; the phone's `features/sync/restorePage.ts`, `features/steps/walkRestore.ts`). A new phone or a new sign-in sends `POST /sync` with **`restore`**: `{ walk?: true, activities?: { before?, limit? } }`. The first request asks for both: the answer's `down.restore` has **`walk`** (the user's `walkdata` row: today's plain columns and the arrays of completed days, as stored, `null` when there is none) and **`activities`** (a page `{ activities, next, total }`, newest first, `total` on the first page only). The next requests ask only for activities with the cursor `before` (the `next` of the page before). `more` is true while there is a next page. A page is up to 200 activities (the phone's ask, at most 300) **and is cut to fit about 1.5 MB** (the server asks again for fewer when a page is bigger); the JSON comes from the database and is not parsed on the way. A full account of 2,000 activities is about 10 requests (and fewer with the size cut working in the other direction on small activities), not the 41 of paging by 50. The restore is resumable (the cursor is kept after each page) and the step history is asked for once per account. The sections of the same call run first (`up` is sent, then `restore` is read). A `restore` that does not match (a limit of 0 or over 300, a cursor that is not one) answers `results.restore = { ok: false, code: "BAD_REQUEST" }` and nothing else is refused.

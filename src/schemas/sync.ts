@@ -59,3 +59,15 @@ export const RestoreUpSchema = Type.Object(
 
 /** The `walk` section of `up`: the two bodies of docs/data/api.md section 10, either or both. */
 export const WalkUpSchema = Type.Object({ today: Type.Optional(WalkTodayBodySchema), history: Type.Optional(WalkHistoryBodySchema) }, { additionalProperties: false });
+
+/** The `challengers` section of `up` is a read (docs/data/sync.md section 4c): the step challengers of today. `steps` is the user's total today, counted on the phone; only used while the leaderboard is **dummy**. */
+export const ChallengersUpSchema = Type.Object({ steps: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000_000 })) }, { additionalProperties: false });
+
+/**
+ * The `rank` section of `up` is a read (docs/data/sync.md section 4b): it asks for the user's place on the step leaderboards (Day, Week, Month, Year, All time: the current one of each). `steps` are the user's own totals for
+ * those periods, counted on the phone; they are only used while the leaderboard is **dummy** (the server then has nothing of its own to compare), and go when it is real.
+ */
+export const RankUpSchema = Type.Object(
+  { steps: Type.Optional(Type.Object({ Day: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Week: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Month: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Year: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), 'All time': Type.Integer({ minimum: 0, maximum: 1_000_000_000 }) }, { additionalProperties: false })) },
+  { additionalProperties: false },
+);

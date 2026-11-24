@@ -28,7 +28,7 @@ export async function login(app: FastifyInstance, b: LoginBody, ip?: string): Pr
   const tokens = await loginDevice(app, { deviceid: b.deviceid, userid, downloadid, applegoogleid: identity.sub, device: b.device ?? 'phone' });
   // Apple: the refresh token that deleting the account must revoke. A failure is not a failed sign-in (the user is in); it is only logged.
   if (b.provider === 'apple' && b.authCode) {
-    const refresh = await exchangeAppleCode(b.authCode);
+    const refresh = await exchangeAppleCode(b.authCode, identity.audience);
     if (refresh) await w.query('UPDATE usertokens SET apple_refresh_token = $2 WHERE deviceid = $1', [b.deviceid, refresh]);
     else app.log.warn({ userid }, 'Apple refresh token not kept (exchange failed or not set up)');
   }

@@ -16,6 +16,8 @@ export interface ProviderIdentity {
   email: string | null;
   givenName: string | null;
   familyName: string | null;
+  /** The audience the token was made for: the app's bundle id (iOS) or the Services ID (Android's web sign-in). Apple's code exchange and revoke must use the same client. */
+  audience: string;
 }
 
 const ISSUERS: Record<Provider, string[]> = { apple: ['https://appleid.apple.com'], google: ['https://accounts.google.com', 'accounts.google.com'] };
@@ -24,7 +26,8 @@ const refused = (why: string) => errors.Unauthorized(`The sign-in was not accept
 
 function audiences(provider: Provider): string[] {
   const e = env();
-  return provider === 'apple' ? [e.apple.clientId] : e.google.clientIds;
+  // Apple: the app itself (iOS) and the Services ID (Android signs in through Apple's web page, which makes tokens for it).
+  return provider === 'apple' ? [e.apple.clientId, e.apple.servicesId] : e.google.clientIds;
 }
 
 const sha256hex = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -49,8 +52,10 @@ export async function verifyIdToken(provider: Provider, idToken: string, rawNonc
   } else if (rawNonce && provider === 'apple') {
     throw refused('the token has no nonce');
   }
+  const aud = ([] as string[]).concat(payload.aud ?? []).find((a) => audience.includes(a)) ?? audience[0];
   return {
     sub: payload.sub,
+    audience: aud,
     email: text(payload.email),
     givenName: text(payload.given_name),
     familyName: text(payload.family_name),

@@ -20,8 +20,9 @@ test('the same address: same; an IPv4-mapped form of it is the same address', ()
   expect(checkIpref('::ffff:203.0.113.9', ipref, NOW, KEY)).toBe('same');
 });
 
-test('a different address: ignored within a day, looked up after a day', () => {
+test('a different address: ignored within two hours, looked up after two hours', () => {
   const ipref = makeIpref('203.0.113.9', NOW - 3600, KEY);
+  expect(IPREF_MAX_AGE_SECONDS).toBe(2 * 3600);
   expect(checkIpref('198.51.100.7', ipref, NOW, KEY)).toBe('ignore');
   const old = makeIpref('203.0.113.9', NOW - IPREF_MAX_AGE_SECONDS, KEY);
   expect(checkIpref('198.51.100.7', old, NOW, KEY)).toBe('changed');

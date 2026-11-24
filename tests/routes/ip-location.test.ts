@@ -58,7 +58,7 @@ test('the same address with its ipref: nothing is looked up, and the same ipref 
   expect(res.headers.ipref).toBe(ipref);
 });
 
-test('a different address within a day is ignored; after a day it is looked up and the place changes', async () => {
+test('a different address within two hours is ignored; after two hours it is looked up and the place changes', async () => {
   const fresh = makeIpref(IP_A, NOW() - 3600, env().iprefKey);
   const ignored = await call(IP_B, { 'x-location': 'off', 'x-ipref': fresh });
   expect(local).not.toHaveBeenCalled();

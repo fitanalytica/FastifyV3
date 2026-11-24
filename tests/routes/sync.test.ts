@@ -334,3 +334,64 @@ test('device: a push token is kept; an empty one or none keeps it; null takes it
   // The watch's own install is never touched.
   expect((await app.pg.writer.query('SELECT fcm_token FROM downloads WHERE downloadid = $1', [a.watchDownloadid])).rows[0].fcm_token).toBeNull();
 });
+
+// The rank section (docs/data/sync.md section 4b): a read, dummy for now. Its own account, with a public profile (the account above was made private by an earlier test).
+const STEPS = { Day: 6000, Week: 50000, Month: 200000, Year: 2000000, 'All time': 5000000 };
+let c: Account;
+const syncC = (payload: unknown) => sync(payload, c.phoneToken);
+
+test('rank: five people per period in rank order, with the user among them, and the user\'s own total', async () => {
+  c = await createAccount(app);
+  await app.pg.writer.query(`INSERT INTO userinfo (userid, fname, lname, weight, seconds_from_gmt, hideprofile, city, state, iso, dateregistered) VALUES ($1, 'Pat', 'Test', 68, 0, false, 'Pune', 'MH', 'IN', 1700000000)`, [c.userid]);
+  const res = await syncC({ up: { rank: { steps: STEPS } } });
+  expect(res.statusCode).toBe(200);
+  expect(res.json().results.rank).toEqual({ ok: true });
+  const down = res.json().down.rank;
+  expect(Object.keys(down)).toEqual(['Day', 'Week', 'Month', 'Year', 'All time']);
+  for (const [period, b] of Object.entries(down) as [string, { rank: number; people: { rank: number; steps: number; you?: boolean }[] }][]) {
+    expect(b.people, period).toHaveLength(5);
+    expect(b.people.map(p => p.rank), period).toEqual([...Array(5)].map((_, i) => b.people[0].rank + i));
+    expect(b.people.filter(p => p.you), period).toHaveLength(1);
+    const steps = b.people.map(p => p.steps);
+    expect(steps, period).toEqual([...steps].sort((x, y) => y - x));
+    expect(b.people.find(p => p.you)).toMatchObject({ rank: b.rank, steps: STEPS[period as keyof typeof STEPS] });
+  }
+});
+
+test('rank: first place is you and four below; a bad request is refused alone', async () => {
+  const top = (await syncC({ up: { rank: { steps: { ...STEPS, Day: 99999 } } } })).json().down.rank.Day;
+  expect(top.rank).toBe(1);
+  expect(top.people.map((p: { rank: number }) => p.rank)).toEqual([1, 2, 3, 4, 5]);
+  expect(top.people[0].you).toBe(true);
+  const bad = await syncC({ up: { rank: { steps: { Day: -1 } }, device: {} } });
+  expect(bad.json().results.rank).toMatchObject({ ok: false });
+  expect(bad.json().down.rank).toBeUndefined();
+});
+
+test('challengers: a section of its own in the same call: the first eight with a name and a country, and a bad request refused alone', async () => {
+  const res = await syncC({ up: { challengers: { steps: 210 }, device: {} } });
+  expect(res.json().results.challengers).toEqual({ ok: true });
+  const down = res.json().down.challengers;
+  expect(down.top).toHaveLength(8);
+  expect(down.top[0]).toEqual({ rank: 1, name: expect.any(String), country: expect.any(String), steps: expect.any(Number) });
+  expect(down.top.find((p: { you?: boolean }) => p.you)).toMatchObject({ rank: down.rank, steps: 210, country: 'India' });
+  expect(down.country).toBe('India');
+  expect(down.iso).toBe('IN');
+  // Nothing of it in the rank section's answer.
+  const both = await syncC({ up: { challengers: { steps: 6000 }, rank: { steps: STEPS } } });
+  expect(both.json().down.rank.Day.top).toBeUndefined();
+  const bad = await syncC({ up: { challengers: { steps: -1 } } });
+  expect(bad.json().results.challengers).toMatchObject({ ok: false });
+  expect(bad.json().down.challengers).toBeUndefined();
+});
+
+test('rank: a private user still gets their own rank, with public people beside them', async () => {
+  await syncC({ up: { profile: { visibility: { hidden: true } } } });
+  const down = (await syncC({ up: { rank: { steps: STEPS } } })).json().down.rank;
+  expect(down).not.toBeNull();
+  expect(down.Day.people).toHaveLength(5);
+  expect(down.Day.people.find((p: { you?: boolean }) => p.you)).toMatchObject({ rank: down.Day.rank });
+  await syncC({ up: { profile: { visibility: { hidden: false } } } });
+  await app.pg.writer.query('DELETE FROM userinfo WHERE userid = $1', [c.userid]);
+  await c.remove();
+});

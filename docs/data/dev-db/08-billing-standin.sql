@@ -2,11 +2,51 @@
 -- a row here has bought a subscription, and their profile row is kept for billing, docs/data/api.md section 8b), and `membership`, `protection_logs`, `payments` and `receiptdump`,
 -- which the Pro state and the purchases read and write (api.md section 15). Only the columns the code reads are here, with the real types and keys; the `_sandbox` copy of membership is made too.
 --   psql -d fitanalytica_dev -f 08-billing-standin.sql
+DO $$ BEGIN
+  CREATE TYPE server_type_enum AS ENUM ('apple', 'google');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Google Play's payments (the old Android code's table: a text order id, the end in SECONDS, Play's own words in the three text columns). Written by the Play purchase and notification (api.md section 15).
 CREATE TABLE IF NOT EXISTS paymentstore (
+  order_id TEXT PRIMARY KEY,
+  store_id UUID,
   userid UUID,
   ddate INTEGER DEFAULT EXTRACT(EPOCH FROM now()),
   product_id TEXT,
-  expires_date INTEGER
+  expires_date BIGINT,
+  recent_subscription_start_date BIGINT,
+  amount REAL,
+  convert_rate REAL,
+  auto_renew_status TEXT,
+  currency TEXT,
+  storefront TEXT,
+  transaction_reason TEXT,
+  transaction_type TEXT
+);
+-- (a copy made before the columns above existed gets them here)
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS order_id TEXT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS store_id UUID;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS recent_subscription_start_date BIGINT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS amount REAL;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS convert_rate REAL;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS auto_renew_status TEXT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS storefront TEXT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS transaction_reason TEXT;
+ALTER TABLE paymentstore ADD COLUMN IF NOT EXISTS transaction_type TEXT;
+ALTER TABLE paymentstore ALTER COLUMN expires_date TYPE BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS paymentstore_order_id_key ON paymentstore (order_id);
+
+-- What Google Play's notifications are kept as (the Android side of `receiptdump`).
+CREATE TABLE IF NOT EXISTS receiptdumpstore (
+  receipt_id UUID PRIMARY KEY,
+  server server_type_enum,
+  transaction_id TEXT,
+  product_id TEXT,
+  ddate INTEGER DEFAULT EXTRACT(EPOCH FROM now()),
+  notification JSON,
+  playstore_receipt JSON
 );
 
 CREATE TABLE IF NOT EXISTS membership (
@@ -45,10 +85,6 @@ CREATE TABLE IF NOT EXISTS protection_logs (
   CONSTRAINT unique_protection_tx_id UNIQUE (transaction_id)
 );
 
-DO $$ BEGIN
-  CREATE TYPE server_type_enum AS ENUM ('apple', 'google');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 CREATE TABLE IF NOT EXISTS payments (
   paymentsid UUID PRIMARY KEY,
   store_id UUID,

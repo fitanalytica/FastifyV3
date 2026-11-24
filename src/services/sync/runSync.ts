@@ -3,9 +3,11 @@ import { ErrorCode } from '../../errors/codes.js';
 import type { SectionResult, SyncBody, SyncContext, SyncReply } from '../../types/index.js';
 import { applyActivities } from './activities.js';
 import { codeOf } from './codeOf.js';
+import { applyChallengers, readChallengers } from './challengers.js';
 import { applyDevice } from './device.js';
 import { applyInbox, readInbox } from './inbox.js';
 import { applyProfile } from './profile.js';
+import { applyRank, readRank } from './rank.js';
 import { readRestore } from './restore.js';
 import { applyState, readState } from './state.js';
 import { applyWalk } from './walk.js';
@@ -22,6 +24,8 @@ const SECTIONS: Record<string, { apply: Apply; read?: Read }> = {
   profile: { apply: applyProfile },
   device: { apply: applyDevice },
   state: { apply: applyState, read: readState },
+  rank: { apply: applyRank, read: readRank },
+  challengers: { apply: applyChallengers, read: readChallengers },
 };
 
 export async function runSync(app: FastifyInstance, ctx: SyncContext, body: SyncBody): Promise<SyncReply> {

@@ -4,7 +4,7 @@ import { ipToGeo, type GeoSources } from './ipToGeo.js';
 import { checkIpref, makeIpref } from './ipref.js';
 
 // docs/data/server.md section 7, rule 4: while the phone's location is off (`X-Location: off`) the IP address is the source of the user's place (`geo_source = 1`), even if the last place
-// came from the GPS. It is looked up only when the address changed and the last lookup is a day old (or there is none): `ipref`.
+// came from the GPS. It is looked up only when the address changed and the last lookup is two hours old (or there is none): `ipref`.
 // The place is changed only if it really is different, so a lookup that finds the same place writes nothing.
 const SQL = `
   UPDATE userinfo
@@ -14,9 +14,9 @@ const SQL = `
      AND (city, state, iso) IS DISTINCT FROM (left($4, 50), left($5, 50), $6)`;
 
 /**
- * For a request from a phone that says its location is off: compares the address with the `ipref` it sent, looks the place up when the address changed (and the last lookup is a day old
+ * For a request from a phone that says its location is off: compares the address with the `ipref` it sent, looks the place up when the address changed (and the last lookup is two hours old
  * or missing), and saves it. Answers the `ipref` the phone should keep: a new one after a lookup, else the one it sent. A failed lookup never blocks anything: the place stays as it was, and
- * the new `ipref` still goes out (the lookup is tried again after a day, or if the address changes by then). Never throws.
+ * the new `ipref` still goes out (the lookup is tried again after two hours, or if the address changes by then). Never throws.
  */
 export async function applyIpLocation(app: FastifyInstance, userid: string, ip: string, ipref: string | undefined, now: number = Math.floor(Date.now() / 1000), sources?: GeoSources): Promise<string | undefined> {
   const key = env().iprefKey;

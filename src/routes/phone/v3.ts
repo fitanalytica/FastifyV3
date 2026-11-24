@@ -18,6 +18,7 @@ import { userFeedV3 } from '../../controller/phone/v3/userfeed.js';
 import { userProfileV3 } from '../../controller/phone/v3/userprofile.js';
 import { redeemV3 } from '../../controller/phone/v3/redeem.js';
 import { purchaseIosV3 } from '../../controller/phone/v3/purchaseios.js';
+import { purchaseAndroidV3 } from '../../controller/phone/v3/purchaseandroid.js';
 import { weatherV3 } from '../../controller/phone/v3/weather.js';
 import { installV3 } from '../../controller/phone/v3/install.js';
 import { watchTokenV3 } from '../../controller/phone/v3/watchtoken.js';
@@ -28,7 +29,7 @@ import { accountCodeV3, accountCodeVerifyV3 } from '../../controller/phone/v3/ac
 import { loginV3 } from '../../controller/phone/v3/login.js';
 import { logoutV3 } from '../../controller/phone/v3/logout.js';
 import { profileV3 } from '../../controller/phone/v3/profile.js';
-import { RedeemBodySchema, PurchaseIosBodySchema, DeleteCodeBodySchema, LoginBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
+import { RedeemBodySchema, PurchaseIosBodySchema, PurchaseAndroidBodySchema, DeleteCodeBodySchema, LoginBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../../schemas/index.js';
 import { SyncBodySchema } from '../../schemas/index.js';
 import { InstallBodySchema, WatchTokenBodySchema } from '../../schemas/index.js';
 import { ActivityIdParamsSchema, CommitBodySchema, DevLoginBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, FeedQuerySchema, MediaParamsSchema, LogoutBodySchema, PresignBodySchema, RefreshBodySchema } from '../../schemas/index.js';
@@ -52,6 +53,7 @@ async function phoneRouterV3(fastify: FastifyInstance) {
 
   fastify.post('/auth/watch-token', { ...isAuth, schema: { body: WatchTokenBodySchema } }, watchTokenV3);
   fastify.post('/purchases/ios', { ...isAuth, schema: { body: PurchaseIosBodySchema } }, purchaseIosV3);
+  fastify.post('/purchases/android', { ...isAuth, schema: { body: PurchaseAndroidBodySchema } }, purchaseAndroidV3);
   // Its own list of hooks: the rate limiter adds its hook to the list a route is given, and `isAuth`'s is shared by all the routes above.
   fastify.post('/redeem', { onRequest: [fastify.authenticate('phone')], schema: { body: RedeemBodySchema } }, redeemV3);
   fastify.get('/profile', isAuth, profileV3);

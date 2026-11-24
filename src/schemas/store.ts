@@ -11,6 +11,23 @@ export const StateQuerySchema = Type.Object({
 /** POST /phone/v3/purchases/ios: the transaction exactly as the store signed it (`verificationResultIOS`, a JWS). The server checks the signature itself. */
 export const PurchaseIosBodySchema = Type.Object({ signedTransaction: Type.String({ minLength: 20, maxLength: 20000 }) });
 
+/**
+ * POST /phone/v3/purchases/android: what react-native-iap gives for a Google Play purchase. Only the product and the token are believed: the server asks Google about the token. `price` and `currency` are
+ * the phone's reading of what was paid (kept for reports only, never used to decide anything).
+ */
+export const PurchaseAndroidBodySchema = Type.Object({
+  productId: Type.String({ minLength: 1, maxLength: 100 }),
+  purchaseToken: Type.String({ minLength: 10, maxLength: 4000 }),
+  price: Type.Optional(Type.Number({ minimum: 0, maximum: 1_000_000 })),
+  currency: Type.Optional(Type.String({ pattern: '^[A-Za-z]{3}$' })),
+});
+
+/** POST /store/v3/playstore: a Pub/Sub push of Google Play's real-time developer notification (the message's data is base64 JSON). */
+export const PlayNotificationBodySchema = Type.Object({
+  message: Type.Object({ data: Type.String({ minLength: 4, maxLength: 100000 }), messageId: Type.Optional(Type.String()) }, { additionalProperties: true }),
+  subscription: Type.Optional(Type.String()),
+});
+
 /** POST /store/v3/appstore: the App Store's notification (App Store Server Notifications v2). */
 export const AppStoreNotificationBodySchema = Type.Object({ signedPayload: Type.String({ minLength: 20, maxLength: 100000 }) });
 

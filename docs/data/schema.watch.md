@@ -10,7 +10,7 @@ The watch only stores activities **recorded on the watch** (`iswatch = 1`), and 
 
 ### `activities`
 
-Same columns as the phone's table, with two flags in place of `synced`, and no `media_v2` (the watch uploads no media).
+Same columns as the phone's table, with two flags in place of `synced`, no `media_v2` (the watch uploads no media), and `phone_sent_at` (below). Built: `ios/WatchApp/WatchActivityStore.swift`.
 
 ```sql
 CREATE TABLE activities (
@@ -32,6 +32,7 @@ CREATE TABLE activities (
   activitydetail_v2 TEXT, activitylat TEXT, activitylon TEXT, activitytimenow TEXT,
   activityelevation TEXT, activitydistance TEXT, activitybpm_v2 TEXT,
   device TEXT,
+  phone_sent_at REAL,                       -- when the row was last queued for the phone (a transfer not acknowledged after 6 hours is queued again)
   CHECK (server_synced IN (0, 1)),
   CHECK (phone_synced IN (0, 1)),
   CHECK (delete_pending IN (0, 1))

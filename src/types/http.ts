@@ -1,5 +1,5 @@
 import type { Static } from '@sinclair/typebox';
-import type { RedeemBodySchema, PurchaseIosBodySchema, AppStoreNotificationBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
+import type { RedeemBodySchema, PurchaseIosBodySchema, PurchaseAndroidBodySchema, PlayNotificationBodySchema, AppStoreNotificationBodySchema, StateQuerySchema, DeleteCodeBodySchema, LoginBodySchema, ProfileBodySchema, UserFeedQuerySchema, UserIdParamsSchema, WeatherBodySchema, PostContentSchema, PostIdParamsSchema, PostsQuerySchema, PutPostBodySchema } from '../schemas/index.js';
 import type { WalkHistoryBodySchema, WalkTodayBodySchema } from '../schemas/index.js';
 import type { DeviceInfoSchema, InstallBodySchema, WatchTokenBodySchema } from '../schemas/index.js';
 import type { ActivityIdParamsSchema, BatchBodySchema, DevLoginBodySchema, FeedQuerySchema, CommitBodySchema, ProfileCommitBodySchema, ProfileImageParamsSchema, ProfileKindParamsSchema, ProfilePresignBodySchema, LogoutBodySchema, MediaParamsSchema, PresignBodySchema, RefreshBodySchema, RestoreQuerySchema, WearableRestoreQuerySchema, LocationBodySchema } from '../schemas/index.js';
@@ -29,6 +29,8 @@ export type FeedQuery = Static<typeof FeedQuerySchema>;
 export type StateQuery = Static<typeof StateQuerySchema>;
 export type RedeemBody = Static<typeof RedeemBodySchema>;
 export type PurchaseIosBody = Static<typeof PurchaseIosBodySchema>;
+export type PurchaseAndroidBody = Static<typeof PurchaseAndroidBodySchema>;
+export type PlayNotificationBody = Static<typeof PlayNotificationBodySchema>;
 export type AppStoreNotificationBody = Static<typeof AppStoreNotificationBodySchema>;
 export type WearableRestoreQuery = Static<typeof WearableRestoreQuerySchema>;
 

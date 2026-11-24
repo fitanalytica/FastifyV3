@@ -1,6 +1,6 @@
 import type { Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { ActivitiesUpSchema, DeviceUpSchema, InboxUpSchema, ProfileUpSchema, RestoreUpSchema, StateUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
+import { ActivitiesUpSchema, ChallengersUpSchema, DeviceUpSchema, InboxUpSchema, ProfileUpSchema, RankUpSchema, RestoreUpSchema, StateUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
 import type { AuthInfo } from './auth.js';
 
 // The unified sync call (docs/data/sync.md). The envelope is checked by the route; each section is checked here, by the section itself, so that one bad section does not refuse the others.
@@ -13,6 +13,10 @@ export type InboxUp = Static<typeof InboxUpSchema>;
 export const isInboxUp = (value: unknown): value is InboxUp => Value.Check(InboxUpSchema, value);
 export type StateUp = Static<typeof StateUpSchema>;
 export const isStateUp = (value: unknown): value is StateUp => Value.Check(StateUpSchema, value);
+export type RankUp = Static<typeof RankUpSchema>;
+export const isRankUp = (value: unknown): value is RankUp => Value.Check(RankUpSchema, value);
+export type ChallengersUp = Static<typeof ChallengersUpSchema>;
+export const isChallengersUp = (value: unknown): value is ChallengersUp => Value.Check(ChallengersUpSchema, value);
 export type ProfileUp = Static<typeof ProfileUpSchema>;
 export const isProfileUp = (value: unknown): value is ProfileUp => Value.Check(ProfileUpSchema, value);
 export type DeviceUp = Static<typeof DeviceUpSchema>;

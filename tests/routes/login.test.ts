@@ -214,3 +214,51 @@ test('the Apple key may be given as base64 of the PEM', async () => {
   const { payload } = await jwtVerify(await appleClientSecret(1_800_000_000), ec.publicKey, { currentDate: new Date(1_800_000_100 * 1000) });
   expect(payload.iss).toBe('TEAM123456');
 });
+
+// Android signs in with Apple through Apple's web page and a Services ID (docs/data/api.md section 1b): the token is for the Services ID, and so are the code exchange and the revoke.
+const SERVICES_ID = 'com.fitanalytica.weblogin.sid';
+
+test('Apple on Android: a token made for the Services ID is accepted (with the raw nonce the app sent), and one for another app is still refused', async () => {
+  setup();
+  const nonce = randomUUID();
+  const { jwt, sub } = await token('apple', { aud: SERVICES_ID, nonce, email: 'web@example.com' });
+  const res = await login({ provider: 'apple', idToken: jwt, nonce });
+  expect(res.statusCode).toBe(200);
+  expect(await rows(sub)).toMatchObject([{ loginused: 'apple', applegoogleid: sub }]);
+  const wrong = await token('apple', { aud: 'com.someone.else' });
+  expect((await login({ provider: 'apple', idToken: wrong.jwt })).statusCode).toBe(401);
+});
+
+test('Apple on Android: the code is exchanged as the Services ID (its client id and a secret made for it), and the refresh token is kept', async () => {
+  setup();
+  const calls: Array<{ url: string; body: URLSearchParams }> = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body: URLSearchParams }) => { calls.push({ url, body: init.body }); return { ok: true, json: async () => ({ refresh_token: 'r-web' }) }; }));
+  const nonce = randomUUID();
+  const { jwt } = await token('apple', { aud: SERVICES_ID, nonce });
+  const deviceid = randomUUID();
+  const res = await login({ provider: 'apple', idToken: jwt, nonce, authCode: 'web-code', deviceid });
+  expect(res.statusCode).toBe(200);
+  expect(calls[0].body.get('client_id')).toBe(SERVICES_ID);
+  const secret = await jwtVerify(calls[0].body.get('client_secret')!, ec.publicKey);
+  expect(secret.payload.sub).toBe(SERVICES_ID);
+  expect((await app.pg.writer.query('SELECT apple_refresh_token FROM usertokens WHERE deviceid = $1', [deviceid])).rows[0].apple_refresh_token).toBe('r-web');
+  // The iOS sign-in still exchanges as the app.
+  calls.length = 0;
+  const ios = await token('apple', {});
+  await login({ provider: 'apple', idToken: ios.jwt, authCode: 'ios-code' });
+  expect(calls[0].body.get('client_id')).toBe(APPLE_ID);
+});
+
+test('revoking a token made for the Services ID: Apple refuses the app first, accepts the Services ID; the secret is made for each', async () => {
+  setup();
+  const seen: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: URLSearchParams }) => { seen.push(init.body.get('client_id')!); return { ok: init.body.get('client_id') === SERVICES_ID }; }));
+  expect(await revokeAppleToken('r-web')).toBe(true);
+  expect(seen).toEqual([APPLE_ID, SERVICES_ID]);
+  seen.length = 0;
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: URLSearchParams }) => { seen.push(init.body.get('client_id')!); return { ok: true }; }));
+  expect(await revokeAppleToken('r-ios')).toBe(true);
+  expect(seen).toEqual([APPLE_ID]);
+  const secret = await jwtVerify(await appleClientSecret(1_800_000_000, SERVICES_ID), ec.publicKey, { currentDate: new Date(1_800_000_100 * 1000) });
+  expect(secret.payload.sub).toBe(SERVICES_ID);
+});

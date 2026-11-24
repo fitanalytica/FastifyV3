@@ -8,7 +8,7 @@ import type { StoreRenewal, StoreTransaction } from './types.js';
 // docs/data/api.md section 15. What a purchase does, in ONE place used by the phone's call and by the store's notification (before, each had its own copy). It is safe to run any number
 // of times for the same purchase (a retry, the phone and the notification both reporting it): the payment row, the protection days and the membership are each keyed by the purchase, and
 // a lock on the original transaction keeps two at the same moment from both making codes. The rows are the old app's, in the live or the sandbox table by the purchase's own environment.
-const TABLES = {
+export const TABLES = {
   production: { payments: 'payments', membership: 'membership' },
   sandbox: { payments: 'payments_sandbox', membership: 'membership_sandbox' },
 } as const;
@@ -80,7 +80,8 @@ async function savePayment(c: PoolClient, table: string, userid: string, tx: Sto
   return r.rows[0].paymentsid;
 }
 
-async function apply(c: PoolClient, membership: string, userid: string, tx: StoreTransaction, product: ProductData): Promise<void> {
+/** What a purchase does to the user's rights (shared with Google Play's, `grantPlayPurchase.ts`). */
+export async function apply(c: PoolClient, membership: string, userid: string, tx: StoreTransaction, product: ProductData): Promise<void> {
   const seconds = tx.expiresDate ? Math.floor(tx.expiresDate / 1000) : LIFETIME_S;
   if (product.kind === 'streak') {
     await c.query(

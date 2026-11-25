@@ -146,7 +146,10 @@ test('bought protection days: purchases only (not days spent, not ones tied to a
   await q(50, 'iap', 1700000200, 9000000000001);
   await q(25, 'iap', 1700000100, 9000000000002);
   await q(3, 'used', 1700000300, null);
-  await q(10, 'iap', 1700000400, 9000000000003, randomUUID());
+  // Tied to a streak (a real one: the ledger's rows go with their streak).
+  const streak = randomUUID();
+  await app.pg.writer.query(`INSERT INTO streak_logs (streak_id, userid, level_id, start_date, goal, status) VALUES ($1, $2, $3, 1700000000, 8000, 'in_progress')`, [streak, a.userid, randomUUID()]);
+  await q(10, 'iap', 1700000400, 9000000000003, streak);
   await q(25, 'iap', 1700000100, 9000000000004, null).catch(() => {});
   const grants = (await state()).json().protection.grants as { id: string; days: number; at: number }[];
   expect(grants.map((g) => [g.days, g.at])).toEqual([[25, 1700000100], [25, 1700000100], [50, 1700000200]]);

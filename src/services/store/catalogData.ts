@@ -38,7 +38,7 @@ const communication = {
 };
 
 const GREEN = '#558B2F';
-const alert = (title: string, subtitle: string) => ({ header: 'Congratulations', headerColor: GREEN, title, subtitle });
+const alert = (title: string, subtitle: string) => ({ header: 'Congratulations', headerColor: GREEN, showConfetti: true, title, subtitle });
 
 export const CATALOG_DATA: CatalogData = {
   subscription: {
@@ -82,4 +82,4 @@ export const CATALOG_DATA: CatalogData = {
 };
 
 /** The pop-up's words for a code redeemed (the words of the purchases' alerts are in the products above). */
-export const REDEEM_ALERT = { header: 'Congratulations', headerColor: GREEN, title: "You're now Pro", subtitle: 'All premium features unlocked' };
+export const REDEEM_ALERT = { header: 'Congratulations', headerColor: GREEN, showConfetti: true, title: "You're now Pro", subtitle: 'All premium features unlocked' };

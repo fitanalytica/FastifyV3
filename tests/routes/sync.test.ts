@@ -58,9 +58,9 @@ test('walk: a today that is refused does not undo the history saved in the same 
 });
 
 test('a section that is not valid fails alone; a section the server does not have is named; the valid one is saved', async () => {
-  const res = await sync({ up: { walk: { today: { ...TODAY, stepcount: 4400 } }, streak: { x: 1 }, plan: 'nonsense' } });
+  const res = await sync({ up: { walk: { today: { ...TODAY, stepcount: 4400 } }, nothing: { x: 1 }, plan: 'nonsense' } });
   expect(res.statusCode).toBe(200);
-  expect(res.json().results).toEqual({ walk: { ok: true, today: 'ok' }, streak: { ok: false, code: 'UNKNOWN_SECTION' }, plan: { ok: false, code: 'UNKNOWN_SECTION' } });
+  expect(res.json().results).toEqual({ walk: { ok: true, today: 'ok' }, nothing: { ok: false, code: 'UNKNOWN_SECTION' }, plan: { ok: false, code: 'UNKNOWN_SECTION' } });
   const bad = await sync({ up: { walk: { today: { stepcount: 'many' } } } });
   expect(bad.statusCode).toBe(200);
   expect(bad.json().results.walk).toEqual({ ok: false, code: 'BAD_REQUEST' });
@@ -383,6 +383,45 @@ test('challengers: a section of its own in the same call: the first eight with a
   const bad = await syncC({ up: { challengers: { steps: -1 } } });
   expect(bad.json().results.challengers).toMatchObject({ ok: false });
   expect(bad.json().down.challengers).toBeUndefined();
+});
+
+test('streakLeaders: a section of its own: five people around the user, and a bad request refused alone', async () => {
+  const res = await syncC({ up: { streakLeaders: { days: 44 }, device: {} } });
+  expect(res.json().results.streakLeaders).toEqual({ ok: true });
+  const down = res.json().down.streakLeaders;
+  expect(down.people).toHaveLength(5);
+  expect(down.people[2]).toMatchObject({ you: true, days: 44, rank: down.rank, country: 'India' });
+  expect(down.people[0]).toEqual({ rank: expect.any(Number), name: expect.any(String), country: expect.any(String), days: expect.any(Number) });
+  const bad = await syncC({ up: { streakLeaders: { days: -1 } } });
+  expect(bad.json().results.streakLeaders).toMatchObject({ ok: false });
+  expect(bad.json().down.streakLeaders).toBeUndefined();
+});
+
+test('feedScrub: says which of the ids the feed no longer shows, and a bad request is refused alone', async () => {
+  const unknown = '11111111-2222-4333-8444-555555555555';
+  const res = await syncC({ up: { feedScrub: { ids: [unknown] }, device: {} } });
+  expect(res.json().results.feedScrub).toEqual({ ok: true });
+  expect(res.json().down.feedScrub).toEqual({ gone: [unknown] });
+  const none = await syncC({ up: { feedScrub: { ids: [] } } });
+  expect(none.json().down.feedScrub).toEqual({ gone: [] });
+  const bad = await syncC({ up: { feedScrub: { ids: ['not-an-id'] } } });
+  expect(bad.json().results.feedScrub).toMatchObject({ ok: false });
+  expect(bad.json().down.feedScrub).toBeUndefined();
+});
+
+test('streakConfig: the levels and texts come whole for a new phone, only the version when it is current, and a bad version is refused alone', async () => {
+  const first = await syncC({ up: { streakConfig: {}, device: {} } });
+  expect(first.json().results.streakConfig).toEqual({ ok: true });
+  const down = first.json().down.streakConfig;
+  expect(down.levels).toHaveLength(8);
+  expect(down.messages.daily_target).toHaveLength(20);
+  const same = await syncC({ up: { streakConfig: { version: down.version } } });
+  expect(same.json().down.streakConfig).toEqual({ version: down.version });
+  const old = await syncC({ up: { streakConfig: { version: '000000000000' } } });
+  expect(old.json().down.streakConfig.levels).toHaveLength(8);
+  const bad = await syncC({ up: { streakConfig: { version: 'nope' } } });
+  expect(bad.json().results.streakConfig).toMatchObject({ ok: false });
+  expect(bad.json().down.streakConfig).toBeUndefined();
 });
 
 test('rank: a private user still gets their own rank, with public people beside them', async () => {

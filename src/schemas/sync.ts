@@ -45,11 +45,13 @@ export const DeviceUpSchema = DeviceInfoSchema;
 
 /**
  * `restore` of the sync call (docs/data/sync.md section 5): what a new phone, or a new sign-in, takes from the server. `walk` asks for the step history (the whole `walkdata` row); `activities` for a page of the
- * user's activities in full, newest first, after the cursor `before` (the `next` of the page before), `limit` of them (up to 300; the page is also cut to fit about 1.5 MB). More kinds join here (streak, plan).
+ * user's activities in full, newest first, after the cursor `before` (the `next` of the page before), `limit` of them (up to 300; the page is also cut to fit about 1.5 MB). More kinds join here (plan).
  */
 export const RestoreUpSchema = Type.Object(
   {
     walk: Type.Optional(Type.Boolean()),
+    /** The streak to carry on, the ones before it and the protection days earned and not spent (docs/data/sync.md section 5). */
+    streak: Type.Optional(Type.Boolean()),
     activities: Type.Optional(
       Type.Object({ before: Type.Optional(Type.String({ pattern: '^[0-9]{1,10}\\.[0-9a-fA-F-]{36}$' })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })) }, { additionalProperties: false }),
     ),
@@ -62,6 +64,40 @@ export const WalkUpSchema = Type.Object({ today: Type.Optional(WalkTodayBodySche
 
 /** The `challengers` section of `up` is a read (docs/data/sync.md section 4c): the step challengers of today. `steps` is the user's total today, counted on the phone; only used while the leaderboard is **dummy**. */
 export const ChallengersUpSchema = Type.Object({ steps: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000_000 })) }, { additionalProperties: false });
+
+/** The `streakLeaders` section of `up` is a read (docs/data/sync.md section 4d): the streak leaderboard window. `days` is the user's current streak, counted on the phone; only used while the leaderboard is **dummy**. */
+export const StreakLeadersUpSchema = Type.Object({ days: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })) }, { additionalProperties: false });
+
+/** A UUID as text: checked by pattern, because a section is checked with `Value.Check`, which has no `uuid` format. */
+const IdSchema = Type.String({ pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' });
+const DayLogSchema = Type.Object(
+  { s: Type.Integer({ minimum: 0, maximum: 1_000_000 }), r: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })), r_t: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })), p: Type.Optional(Type.Literal(true)), n: Type.Optional(Type.Literal(true)) },
+  { additionalProperties: false },
+);
+/** One streak as `streak_logs` keeps it (docs/data/sync.md section 4g). `daily_logs` is a list of levels, each with its days in order from `start_date`: `s` steps, `r` minutes run, `r_t` the run's target, `p` a protection day, `n` a day with no step data (it counts for nothing). */
+const StreakBodySchema = Type.Object(
+  {
+    streak_id: IdSchema,
+    level_id: IdSchema,
+    start_date: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }),
+    end_date: Type.Optional(Type.Integer({ minimum: 0, maximum: 4_102_444_800 })),
+    goal: Type.Integer({ minimum: 1000, maximum: 100_000 }),
+    status: Type.Union([Type.Literal('in_progress'), Type.Literal('completed'), Type.Literal('failed')]),
+    daily_logs: Type.Array(Type.Object({ level_id: IdSchema, logs: Type.Array(DayLogSchema, { maxItems: 4000 }) }, { additionalProperties: false }), { maxItems: 20 }),
+  },
+  { additionalProperties: false },
+);
+/** The `streak` section of `up`: the streaks that changed (the running one, and one that has just ended). `duration` and `protection_used` are not sent: the server works them out from the days. */
+export const StreakUpSchema = Type.Object({ streaks: Type.Array(StreakBodySchema, { minItems: 1, maxItems: 5 }) }, { additionalProperties: false });
+
+/** The `streakConfig` section of `up` is a read (docs/data/sync.md section 4f): the version of the levels and notification texts the phone holds; the content comes back whole only when it changed. */
+export const StreakConfigUpSchema = Type.Object({ version: Type.Optional(Type.String({ pattern: '^[0-9a-f]{12}$' })) }, { additionalProperties: false });
+
+/** The `feedScrub` section of `up` (docs/data/sync.md section 4e): the ids of the posts and activities the phone keeps in its feed cache; the answer says which of them are no longer in the feed for this user. */
+export const FeedScrubUpSchema = Type.Object(
+  { ids: Type.Array(Type.String({ pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' }), { maxItems: 500 }) },
+  { additionalProperties: false },
+);
 
 /**
  * The `rank` section of `up` is a read (docs/data/sync.md section 4b): it asks for the user's place on the step leaderboards (Day, Week, Month, Year, All time: the current one of each). `steps` are the user's own totals for

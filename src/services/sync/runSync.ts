@@ -4,6 +4,10 @@ import type { SectionResult, SyncBody, SyncContext, SyncReply } from '../../type
 import { applyActivities } from './activities.js';
 import { codeOf } from './codeOf.js';
 import { applyChallengers, readChallengers } from './challengers.js';
+import { applyStreak } from './streak.js';
+import { applyStreakConfig, readStreakConfig } from './streakConfig.js';
+import { applyFeedScrub, readFeedScrub } from './feedScrub.js';
+import { applyStreakLeaders, readStreakLeaders } from './streakLeaders.js';
 import { applyDevice } from './device.js';
 import { applyInbox, readInbox } from './inbox.js';
 import { applyProfile } from './profile.js';
@@ -26,6 +30,10 @@ const SECTIONS: Record<string, { apply: Apply; read?: Read }> = {
   state: { apply: applyState, read: readState },
   rank: { apply: applyRank, read: readRank },
   challengers: { apply: applyChallengers, read: readChallengers },
+  streak: { apply: applyStreak },
+  streakConfig: { apply: applyStreakConfig, read: readStreakConfig },
+  feedScrub: { apply: applyFeedScrub, read: readFeedScrub },
+  streakLeaders: { apply: applyStreakLeaders, read: readStreakLeaders },
 };
 
 export async function runSync(app: FastifyInstance, ctx: SyncContext, body: SyncBody): Promise<SyncReply> {

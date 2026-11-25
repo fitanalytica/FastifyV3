@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p .",
     "test": "dotenv -e .env.test -- vitest run",
-    "backfill:preview": "dotenv -e .env.local -- tsx scripts/backfill-route-preview.ts"
+    "backfill:preview": "dotenv -e .env.local -- tsx scripts/backfill-route-preview.ts",
+    "ledger:dry-run": "tsx scripts/ledger-dry-run.ts"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import compress from '@fastify/compress';
+import bodyEncoding from '../hooks/bodyEncoding.js';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -19,6 +20,8 @@ export async function registerPlugins(app: FastifyInstance) {
   // Level 1: a restore page is ~5 MB of JSON; level 6 took ~174 ms of CPU per page, level 1 ~21 ms for ~20% more bytes (measured).
   // Gzip request bodies are unpacked; replies are compressed when the app asks.
   await app.register(compress, { zlibOptions: { level: 1 } });
+  // A large body as gzip written in base64 text (the phone's way: see bodyEncoding.ts).
+  await app.register(bodyEncoding);
   await app.register(helmet);
   await app.register(cors);
   // The pictures: a feed page makes dozens of image requests (each a redirect to S3), so these routes have a limit of their own, much higher, counted per

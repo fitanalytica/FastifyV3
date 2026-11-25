@@ -209,3 +209,18 @@ test('a page the phone already has is answered 304 with no body: its ETag is the
   expect(changed.statusCode).toBe(200);
   expect(changed.headers.etag).not.toBe(etag);
 });
+
+// The feed's scrub (docs/data/sync.md section 4e): of the ids a phone keeps, the ones this user's feed no longer shows.
+test('feedScrub: what the feed still shows is kept; a hidden profile, a deleted activity and an unknown id are gone', async () => {
+  const shown = activity(a.phoneDownloadid, { startdate: T + 10, enddate: T + 20 });
+  const deleted = activity(a.phoneDownloadid, { startdate: T + 30, enddate: T + 40 });
+  const theirs = activity(hidden.phoneDownloadid, { startdate: T + 50, enddate: T + 60 });
+  await post(a, [shown, deleted]);
+  await post(hidden, [theirs]);
+  await phoneDelete(app, a.phoneToken, deleted.activityid);
+  const unknown = randomUUID();
+  const ids = [shown.activityid, deleted.activityid, theirs.activityid, unknown];
+  const res = await app.inject({ method: 'POST', url: '/phone/v3/sync', headers: bearer(b.phoneToken), payload: { up: { feedScrub: { ids } } } });
+  expect(res.json().results.feedScrub).toEqual({ ok: true });
+  expect([...res.json().down.feedScrub.gone].sort()).toEqual([deleted.activityid, theirs.activityid, unknown].sort());
+});

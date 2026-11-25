@@ -1,6 +1,6 @@
 import type { Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { ActivitiesUpSchema, ChallengersUpSchema, DeviceUpSchema, InboxUpSchema, ProfileUpSchema, RankUpSchema, RestoreUpSchema, StateUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
+import { ActivitiesUpSchema, ChallengersUpSchema, DeviceUpSchema, FeedScrubUpSchema, InboxUpSchema, ProfileUpSchema, RankUpSchema, RestoreUpSchema, StateUpSchema, StreakConfigUpSchema, StreakLeadersUpSchema, StreakUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
 import type { AuthInfo } from './auth.js';
 
 // The unified sync call (docs/data/sync.md). The envelope is checked by the route; each section is checked here, by the section itself, so that one bad section does not refuse the others.
@@ -17,6 +17,14 @@ export type RankUp = Static<typeof RankUpSchema>;
 export const isRankUp = (value: unknown): value is RankUp => Value.Check(RankUpSchema, value);
 export type ChallengersUp = Static<typeof ChallengersUpSchema>;
 export const isChallengersUp = (value: unknown): value is ChallengersUp => Value.Check(ChallengersUpSchema, value);
+export type StreakUp = Static<typeof StreakUpSchema>;
+export const isStreakUp = (value: unknown): value is StreakUp => Value.Check(StreakUpSchema, value);
+export type StreakConfigUp = Static<typeof StreakConfigUpSchema>;
+export const isStreakConfigUp = (value: unknown): value is StreakConfigUp => Value.Check(StreakConfigUpSchema, value);
+export type StreakLeadersUp = Static<typeof StreakLeadersUpSchema>;
+export const isStreakLeadersUp = (value: unknown): value is StreakLeadersUp => Value.Check(StreakLeadersUpSchema, value);
+export type FeedScrubUp = Static<typeof FeedScrubUpSchema>;
+export const isFeedScrubUp = (value: unknown): value is FeedScrubUp => Value.Check(FeedScrubUpSchema, value);
 export type ProfileUp = Static<typeof ProfileUpSchema>;
 export const isProfileUp = (value: unknown): value is ProfileUp => Value.Check(ProfileUpSchema, value);
 export type DeviceUp = Static<typeof DeviceUpSchema>;

@@ -4,6 +4,8 @@ import type { SectionResult, SyncBody, SyncContext, SyncReply } from '../../type
 import { applyActivities } from './activities.js';
 import { codeOf } from './codeOf.js';
 import { applyChallengers, readChallengers } from './challengers.js';
+import { applyDistanceRank, readDistanceRank } from './distanceRank.js';
+import { applyPlan } from './plan.js';
 import { applyStreak } from './streak.js';
 import { applyStreakConfig, readStreakConfig } from './streakConfig.js';
 import { applyFeedScrub, readFeedScrub } from './feedScrub.js';
@@ -29,8 +31,10 @@ const SECTIONS: Record<string, { apply: Apply; read?: Read }> = {
   device: { apply: applyDevice },
   state: { apply: applyState, read: readState },
   rank: { apply: applyRank, read: readRank },
+  distanceRank: { apply: applyDistanceRank, read: readDistanceRank },
   challengers: { apply: applyChallengers, read: readChallengers },
   streak: { apply: applyStreak },
+  plan: { apply: applyPlan },
   streakConfig: { apply: applyStreakConfig, read: readStreakConfig },
   feedScrub: { apply: applyFeedScrub, read: readFeedScrub },
   streakLeaders: { apply: applyStreakLeaders, read: readStreakLeaders },

@@ -52,6 +52,8 @@ export const RestoreUpSchema = Type.Object(
     walk: Type.Optional(Type.Boolean()),
     /** The streak to carry on, the ones before it and the protection days earned and not spent (docs/data/sync.md section 5). */
     streak: Type.Optional(Type.Boolean()),
+    /** The running plan to carry on (the active one, else the latest that ended) with its decided weeks (docs/data/sync.md section 4h). */
+    plan: Type.Optional(Type.Boolean()),
     activities: Type.Optional(
       Type.Object({ before: Type.Optional(Type.String({ pattern: '^[0-9]{1,10}\\.[0-9a-fA-F-]{36}$' })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })) }, { additionalProperties: false }),
     ),
@@ -59,13 +61,25 @@ export const RestoreUpSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * The `distanceRank` section of `up` (docs/data/sync.md section 4i): a read for Activity stats' Ranking card. `keys` is the label of the first day of the user's current week, month and year (the local date as UTC midnight, seconds):
+ * the server adds up the user's distance from its `activities` table under them and ranks it. All time has no key.
+ */
+export const DistanceRankUpSchema = Type.Object(
+  { keys: Type.Object({ Week: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }), Month: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }), Year: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }) }, { additionalProperties: false }) },
+  { additionalProperties: false },
+);
+
 /** The `walk` section of `up`: the two bodies of docs/data/api.md section 10, either or both. */
 export const WalkUpSchema = Type.Object({ today: Type.Optional(WalkTodayBodySchema), history: Type.Optional(WalkHistoryBodySchema) }, { additionalProperties: false });
 
-/** The `challengers` section of `up` is a read (docs/data/sync.md section 4c): the step challengers of today. `steps` is the user's total today, counted on the phone; only used while the leaderboard is **dummy**. */
-export const ChallengersUpSchema = Type.Object({ steps: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000_000 })) }, { additionalProperties: false });
+/** The `challengers` section of `up` is a read (docs/data/sync.md section 4c): the step challengers of today. `steps` is the user's total today, counted on the phone, and `day` the label of today (the local date as UTC midnight): the server stores them as the Day total and answers with today's first eight. */
+export const ChallengersUpSchema = Type.Object(
+  { steps: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000_000 })), day: Type.Optional(Type.Integer({ minimum: 0, maximum: 4_102_444_800 })) },
+  { additionalProperties: false },
+);
 
-/** The `streakLeaders` section of `up` is a read (docs/data/sync.md section 4d): the streak leaderboard window. `days` is the user's current streak, counted on the phone; only used while the leaderboard is **dummy**. */
+/** The `streakLeaders` section of `up` is a read (docs/data/sync.md section 4d): the streak leaderboard window. The user's days come from the streak the phone sent (`days` is ignored). */
 export const StreakLeadersUpSchema = Type.Object({ days: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })) }, { additionalProperties: false });
 
 /** A UUID as text: checked by pattern, because a section is checked with `Value.Check`, which has no `uuid` format. */
@@ -90,6 +104,41 @@ const StreakBodySchema = Type.Object(
 /** The `streak` section of `up`: the streaks that changed (the running one, and one that has just ended). `duration` and `protection_used` are not sent: the server works them out from the days. */
 export const StreakUpSchema = Type.Object({ streaks: Type.Array(StreakBodySchema, { minItems: 1, maxItems: 5 }) }, { additionalProperties: false });
 
+const Day = { minimum: 0, maximum: 4_102_444_800 };
+/** One decided week of a plan: `[the plan week it counted as, outcome, its seven days from Sunday]`. Outcome: `o` on track, `r` the week repeats, `b` back one, `p` paused. Days: `R`/`L` run and long run done, `r`/`l` missed, `.` rest, `-` outside the plan or paused. */
+const PlanWeekSchema = Type.Tuple([Type.Integer({ minimum: 0, maximum: 400 }), Type.Union([Type.Literal('o'), Type.Literal('r'), Type.Literal('b'), Type.Literal('p')]), Type.String({ pattern: '^[RLrl.-]{7}$' })]);
+/**
+ * The `plan` section of `up` (docs/data/sync.md section 4h): the running plan as one row of `run_plans`. The answers, the builder's version and the length are written once; `weeks` come as `weeks_from` (the place of the first
+ * of them) and are only appended; `ended_on` is set once; the run days, tuning and pause are replaced when `settings_at` is not older than the held one.
+ */
+export const PlanUpSchema = Type.Object(
+  {
+    plan: Type.Object(
+      {
+        plan_id: IdSchema,
+        started_on: Type.Integer(Day),
+        race_on: Type.Optional(Type.Integer(Day)),
+        ended_on: Type.Optional(Type.Integer(Day)),
+        longest_run: Type.Integer({ minimum: 0, maximum: 3 }),
+        distance: Type.Integer({ minimum: 0, maximum: 3 }),
+        gen: Type.Integer({ minimum: 1, maximum: 1000 }),
+        total_weeks: Type.Integer({ minimum: 1, maximum: 400 }),
+        run_days: Type.Integer({ minimum: 0, maximum: 127 }),
+        long_day: Type.Integer({ minimum: 0, maximum: 6 }),
+        pace_delta: Type.Integer({ minimum: -600, maximum: 600 }),
+        volume_pm: Type.Integer({ minimum: 0, maximum: 100 }),
+        tuned_from_week: Type.Optional(Type.Integer({ minimum: 0, maximum: 400 })),
+        paused_until: Type.Optional(Type.Integer(Day)),
+        settings_at: Type.Integer(Day),
+        weeks_from: Type.Integer({ minimum: 0, maximum: 400 }),
+        weeks: Type.Array(PlanWeekSchema, { maxItems: 400 }),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 /** The `streakConfig` section of `up` is a read (docs/data/sync.md section 4f): the version of the levels and notification texts the phone holds; the content comes back whole only when it changed. */
 export const StreakConfigUpSchema = Type.Object({ version: Type.Optional(Type.String({ pattern: '^[0-9a-f]{12}$' })) }, { additionalProperties: false });
 
@@ -100,10 +149,12 @@ export const FeedScrubUpSchema = Type.Object(
 );
 
 /**
- * The `rank` section of `up` is a read (docs/data/sync.md section 4b): it asks for the user's place on the step leaderboards (Day, Week, Month, Year, All time: the current one of each). `steps` are the user's own totals for
- * those periods, counted on the phone; they are only used while the leaderboard is **dummy** (the server then has nothing of its own to compare), and go when it is real.
+ * The `rank` section of `up` (docs/data/sync.md section 4b): it asks for the user's place on the step leaderboards (Day, Week, Month, Year, All time: the current one of each). `steps` are the user's own totals for
+ * those periods, counted on the phone, and `keys` the label of each period's first day (the local date as UTC midnight, seconds; all time has none): the server stores the totals under them and ranks them.
  */
 export const RankUpSchema = Type.Object(
-  { steps: Type.Optional(Type.Object({ Day: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Week: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Month: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Year: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), 'All time': Type.Integer({ minimum: 0, maximum: 1_000_000_000 }) }, { additionalProperties: false })) },
+  { steps: Type.Optional(Type.Object({ Day: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Week: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Month: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), Year: Type.Integer({ minimum: 0, maximum: 1_000_000_000 }), 'All time': Type.Integer({ minimum: 0, maximum: 1_000_000_000 }) }, { additionalProperties: false })),
+    keys: Type.Optional(Type.Object({ Day: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }), Week: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }), Month: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }), Year: Type.Integer({ minimum: 0, maximum: 4_102_444_800 }) }, { additionalProperties: false })),
+  },
   { additionalProperties: false },
 );

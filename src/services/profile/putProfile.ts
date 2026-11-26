@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { ProfileBody } from '../../types/index.js';
 import { ipToGeo } from '../location/ipToGeo.js';
+import { generateMailids } from './mailids.js';
 
 // docs/data/api.md section 7. The fields the user edits in Edit profile (and the new-user setup), any of them: the profile row is made on the first call, and
-// every later call changes only the fields it carries (the last write wins). The new row also gets its `store_id`, the account token the app puts on its purchases
+// every later call changes only the fields it carries (the last write wins). The new row also gets its `mailids` (the support reference, made once and never changed: `ON CONFLICT` leaves it alone)
+// and its `store_id`, the account token the app puts on its purchases
 // (docs/data/api.md section 15); a row that has none is given one when the phone asks for its state. The column names below are the only ones that can reach the SQL; the values
 // always go through parameters.
 // A NEW profile also starts with a place from the IP address of that first request (docs/data/server.md section 7, rule 1: `geo_source = 1`); if the lookup has none, the place of the
@@ -12,7 +14,7 @@ const FIELDS = ['fname', 'lname', 'about', 'gender', 'dobglobal', 'height', 'wei
 type Field = (typeof FIELDS)[number];
 const CAST: Partial<Record<Field, string>> = { gender: '::gender_enum' };
 
-export type SavedProfile = Pick<ProfileBody, Field>;
+export type SavedProfile = Pick<ProfileBody, Field> & { mailids: string | null };
 
 interface StartPlace {
   iso: string;
@@ -40,7 +42,8 @@ export async function putProfile(app: FastifyInstance, userid: string, body: Pro
     const v = body[k];
     return typeof v === 'string' ? v.trim() || null : v;
   };
-  const params: unknown[] = [userid, Math.floor(Date.now() / 1000), ...keys.map(value)];
+  // The support reference is the parameter after the fields; it is only used when the row is new.
+  const params: unknown[] = [userid, Math.floor(Date.now() / 1000), ...keys.map(value), generateMailids()];
   const marks = keys.map((k, i) => `$${i + 3}${CAST[k] ?? ''}`);
   // Only a profile that is not there yet takes a starting place (an existing one keeps its own).
   const isNew = !(await app.pg.writer.query('SELECT 1 FROM userinfo WHERE userid = $1', [userid])).rowCount;
@@ -52,9 +55,9 @@ export async function putProfile(app: FastifyInstance, userid: string, body: Pro
     ? `, $${at}, left($${at + 1}, 50), left($${at + 2}, 50), $${at + 3}::float8, $${at + 4}::float8, CASE WHEN $${at + 3}::float8 IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($${at + 4}::float8, $${at + 3}::float8), 4326) END, 1`
     : '';
   const sql = `
-    INSERT INTO userinfo (userid, dateregistered, store_id, ${keys.join(', ')}${placeColumns}) VALUES ($1, $2, gen_random_uuid(), ${marks.join(', ')}${placeValues})
+    INSERT INTO userinfo (userid, dateregistered, store_id, mailids, ${keys.join(', ')}${placeColumns}) VALUES ($1, $2, gen_random_uuid(), $${keys.length + 3}, ${marks.join(', ')}${placeValues})
     ON CONFLICT (userid) DO UPDATE SET ${keys.map((c) => `${c} = EXCLUDED.${c}`).join(', ')}
-    RETURNING fname, lname, about, gender, dobglobal, height, weight`;
+    RETURNING fname, lname, about, gender, dobglobal, height, weight, mailids`;
   const r = await app.pg.writer.query(sql, params);
   return r.rows[0];
 }

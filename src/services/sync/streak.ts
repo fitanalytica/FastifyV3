@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { ErrorCode } from '../../errors/codes.js';
 import { isStreakUp, type SectionResult, type StreakUp, type SyncContext } from '../../types/index.js';
+import { setStanding } from '../leaderboard/streakStanding.js';
 import { settledDays, writeLedger } from '../streak/ledger.js';
 import { codeOf } from './codeOf.js';
 
@@ -53,6 +54,8 @@ export async function applyStreak(app: FastifyInstance, { userid }: SyncContext,
         }
         await writeLedger(c, userid, s.streak_id, s.start_date, s.daily_logs, settled);
         await c.query('COMMIT');
+        // The streak leaderboard follows the streak that is running.
+        await setStanding(app, userid, s.streak_id, s.status, duration);
       } catch (e) {
         await c.query('ROLLBACK').catch(() => {});
         throw e;

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { ErrorCode } from '../../errors/codes.js';
 import { isRestoreUp, type SectionResult, type SyncContext } from '../../types/index.js';
 import { restoreActivities } from '../activities/restore.js';
+import { readPlanRestore } from '../plan/runPlan.js';
 import { readStreakRestore } from '../streak/readStreaks.js';
 import { readWalk } from '../walk/readWalk.js';
 import { codeOf } from './codeOf.js';
@@ -20,6 +21,7 @@ export async function readRestore(app: FastifyInstance, { userid }: SyncContext,
     let more = false;
     if (restore.walk) down.walk = await readWalk(app, userid);
     if (restore.streak) down.streak = await readStreakRestore(app, userid);
+    if (restore.plan) down.plan = await readPlanRestore(app, userid);
     if (restore.activities) {
       let limit = restore.activities.limit ?? RESTORE_PAGE;
       let text = await restoreActivities(app, userid, { limit, before: restore.activities.before });

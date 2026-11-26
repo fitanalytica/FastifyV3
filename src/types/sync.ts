@@ -1,6 +1,6 @@
 import type { Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { ActivitiesUpSchema, ChallengersUpSchema, DeviceUpSchema, FeedScrubUpSchema, InboxUpSchema, ProfileUpSchema, RankUpSchema, RestoreUpSchema, StateUpSchema, StreakConfigUpSchema, StreakLeadersUpSchema, StreakUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
+import { ActivitiesUpSchema, ChallengersUpSchema, DeviceUpSchema, DistanceRankUpSchema, FeedScrubUpSchema, InboxUpSchema, ProfileUpSchema, RankUpSchema, PlanUpSchema, RestoreUpSchema, StateUpSchema, StreakConfigUpSchema, StreakLeadersUpSchema, StreakUpSchema, SyncBodySchema, WalkUpSchema } from '../schemas/index.js';
 import type { AuthInfo } from './auth.js';
 
 // The unified sync call (docs/data/sync.md). The envelope is checked by the route; each section is checked here, by the section itself, so that one bad section does not refuse the others.
@@ -19,6 +19,10 @@ export type ChallengersUp = Static<typeof ChallengersUpSchema>;
 export const isChallengersUp = (value: unknown): value is ChallengersUp => Value.Check(ChallengersUpSchema, value);
 export type StreakUp = Static<typeof StreakUpSchema>;
 export const isStreakUp = (value: unknown): value is StreakUp => Value.Check(StreakUpSchema, value);
+export type DistanceRankUp = Static<typeof DistanceRankUpSchema>;
+export const isDistanceRankUp = (value: unknown): value is DistanceRankUp => Value.Check(DistanceRankUpSchema, value);
+export type PlanUp = Static<typeof PlanUpSchema>;
+export const isPlanUp = (value: unknown): value is PlanUp => Value.Check(PlanUpSchema, value);
 export type StreakConfigUp = Static<typeof StreakConfigUpSchema>;
 export const isStreakConfigUp = (value: unknown): value is StreakConfigUp => Value.Check(StreakConfigUpSchema, value);
 export type StreakLeadersUp = Static<typeof StreakLeadersUpSchema>;

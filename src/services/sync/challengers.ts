@@ -1,18 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import { ErrorCode } from '../../errors/codes.js';
 import { isChallengersUp, type SectionResult, type SyncContext } from '../../types/index.js';
-import { countryName } from '../location/countries.js';
-import { dummyChallengers } from '../rank/dummyChallengers.js';
+import { readChallengers as readBoard, writeTotals } from '../leaderboard/stepTotals.js';
+import { codeOf } from './codeOf.js';
 
-// The `challengers` section is a read (docs/data/sync.md section 4c): the step challengers of today, in `down.challengers`, asked for in the same call as everything else.
-export const applyChallengers = async (_app: FastifyInstance, _ctx: SyncContext, up: unknown): Promise<SectionResult> => (isChallengersUp(up) ? { ok: true } : { ok: false, code: ErrorCode.BAD_REQUEST });
-
-export async function readChallengers(app: FastifyInstance, ctx: SyncContext, up: unknown): Promise<{ down: unknown } | undefined> {
-  if (!isChallengersUp(up)) {
-    return undefined;
+// The `challengers` section (docs/data/sync.md section 4c): today's steps are stored as the Day total (the same row the rank section writes), and the answer is today's first eight, in `down.challengers`.
+export async function applyChallengers(app: FastifyInstance, { userid }: SyncContext, up: unknown): Promise<SectionResult> {
+  if (!isChallengersUp(up)) return { ok: false, code: ErrorCode.BAD_REQUEST };
+  try {
+    if (up.steps !== undefined && up.day !== undefined) {
+      await writeTotals(app, userid, { Day: up.day, Week: 0, Month: 0, Year: 0 }, { Day: up.steps, Week: 0, Month: 0, Year: 0, 'All time': 0 });
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, code: codeOf(app, e) };
   }
-  // The user's own country (the card shows it under their name), from their profile; none when they have not set one.
-  const r = await app.pg.reader.query<{ iso: string | null }>('SELECT iso FROM userinfo WHERE userid = $1', [ctx.userid]);
-  const iso = r.rows[0]?.iso ?? '';
-  return { down: dummyChallengers(up.steps ?? 0, countryName(iso) ?? '', iso.toUpperCase()) };
+}
+
+export async function readChallengers(app: FastifyInstance, { userid }: SyncContext, up: unknown): Promise<{ down: unknown } | undefined> {
+  if (!isChallengersUp(up) || up.day === undefined) return undefined;
+  return { down: await readBoard(app, userid, up.day, up.steps ?? 0) };
 }

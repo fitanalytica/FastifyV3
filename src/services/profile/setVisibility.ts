@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { errors } from '../../errors/AppError.js';
 import { ErrorCode } from '../../errors/codes.js';
+import { setBoardsVisibility } from '../leaderboard/stepTotals.js';
 
 // docs/data/api.md section 7c. Public or private (`userinfo.hideprofile`). The feed, other people's profiles and a single feed activity all read it per request, so
 // there is nothing to clean up: a hidden user simply stops being served. Repeating a call changes nothing. A user with no profile row yet (the new-user setup is not
@@ -8,5 +9,7 @@ import { ErrorCode } from '../../errors/codes.js';
 export async function setVisibility(app: FastifyInstance, userid: string, hidden: boolean): Promise<{ hidden: boolean }> {
   const r = await app.pg.writer.query('UPDATE userinfo SET hideprofile = $2 WHERE userid = $1', [userid, hidden]);
   if (!r.rowCount) throw errors.NotFound('No profile yet', ErrorCode.NOT_FOUND);
+  // The leaderboards (steps, streaks) follow the profile: a private user is left out of other people's.
+  await setBoardsVisibility(app, userid, hidden);
   return { hidden };
 }

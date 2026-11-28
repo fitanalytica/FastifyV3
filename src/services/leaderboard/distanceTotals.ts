@@ -15,13 +15,13 @@ export const REBUILD_ALL_TIME_EVERY = 3600;
 const DAY = 86_400;
 const utcLabel = (y: number, m: number, d: number) => Date.UTC(y, m, d) / 1000;
 
-/** The first day (a label) of the week (Monday first), month and year that holds a day, and the first day of the next. */
+/** The first day (a label) of the week (a week is Sunday to Saturday), month and year that holds a day, and the first day of the next. */
 export function periodRange(period: Exclude<Period, 'Day'>, day: number): { key: number; end: number | null } {
   const d = new Date(day * 1000);
   if (period === 'All time') return { key: 0, end: null };
   if (period === 'Week') {
-    const monday = day - ((d.getUTCDay() + 6) % 7) * DAY;
-    return { key: monday, end: monday + 7 * DAY };
+    const sunday = day - d.getUTCDay() * DAY;
+    return { key: sunday, end: sunday + 7 * DAY };
   }
   if (period === 'Month') return { key: utcLabel(d.getUTCFullYear(), d.getUTCMonth(), 1), end: utcLabel(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) };
   return { key: utcLabel(d.getUTCFullYear(), 0, 1), end: utcLabel(d.getUTCFullYear() + 1, 0, 1) };

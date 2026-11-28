@@ -42,8 +42,8 @@ afterAll(async () => {
   await app.close();
 });
 
-test('the week, month and year that hold a day, and the periods kept current', () => {
-  expect(periodRange('Week', WED)).toEqual({ key: WED - 2 * DAY, end: WED + 5 * DAY });
+test('the week (Sunday to Saturday), month and year that hold a day, and the periods kept current', () => {
+  expect(periodRange('Week', WED)).toEqual({ key: WED - 3 * DAY, end: WED + 4 * DAY });
   expect(periodRange('Month', WED)).toEqual({ key: Date.UTC(2037, 5, 1) / 1000, end: Date.UTC(2037, 6, 1) / 1000 });
   expect(periodRange('Year', WED)).toEqual({ key: Date.UTC(2037, 0, 1) / 1000, end: Date.UTC(2038, 0, 1) / 1000 });
   expect(periodRange('All time', WED)).toEqual({ key: 0, end: null });
